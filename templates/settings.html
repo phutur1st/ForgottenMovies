@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Scheduler</h2>
+    <form method="post" action="{{ url_for('settings') }}">
+        <label class="toggle-switch">
+            <input type="checkbox" name="scheduler_disabled" {% if scheduler_disabled %}checked{% endif %}>
+            Disable Scheduler (API calls and emails)
+        </label>
+        <p class="help-text">
+            When the scheduler is disabled, Forgotten Movies will skip automatic Overseerr/Tautulli scans and will not send reminder emails.
+            Manual "Run Now" actions still work.
+        </p>
+        <button type="submit">Save</button>
+    </form>
+</div>
+{% endblock %}

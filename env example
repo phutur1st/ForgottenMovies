@@ -1,0 +1,6 @@
+TZ=America/Denver
+PUID=1000
+PGID=1000
+ROOT="/home/ubuntu/Documents/Docker" # The directory where data and configuration will be stored.
+
+

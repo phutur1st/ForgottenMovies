@@ -1,0 +1,888 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<style>
+    #todo-card,
+    #recent-card,
+    #unsubscribe-card {
+        scroll-margin-top: 110px;
+    }
+    .actions-col {
+        width: 70px;
+        text-align: right;
+    }
+    .actions-cell {
+        text-align: right;
+        white-space: nowrap;
+    }
+    .action-menu {
+        position: relative;
+        display: inline-block;
+    }
+    .menu-trigger {
+        background: none;
+        border: none;
+        color: #c5cae9;
+        font-size: 1.25rem;
+        padding: 0.1rem 0.4rem;
+        border-radius: 999px;
+        cursor: pointer;
+    }
+    .menu-trigger:hover {
+        color: #ffcc80;
+    }
+    .menu-trigger:focus-visible {
+        outline: 2px solid #7986cb;
+        outline-offset: 2px;
+    }
+    .action-menu.open .menu-trigger {
+        color: #ffcc80;
+    }
+    .menu-dropdown {
+        position: absolute;
+        top: 110%;
+        right: 0;
+        background: #2a2a2a;
+        border-radius: 8px;
+        min-width: 160px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+        padding: 0.35rem 0;
+        display: none;
+        z-index: 20;
+    }
+    .menu-dropdown form {
+        margin: 0;
+    }
+    .action-menu.open .menu-dropdown {
+        display: block;
+    }
+    .menu-item-button {
+        width: 100%;
+        background: none;
+        border: none;
+        color: #e0e0e0;
+        text-align: left;
+        padding: 0.5rem 0.9rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+    }
+    .menu-item-button:hover,
+    .menu-item-button:focus {
+        background: rgba(63, 81, 181, 0.35);
+        color: #ffffff;
+        outline: none;
+    }
+    .menu-item-button.confirming {
+        background: rgba(229, 115, 115, 0.35);
+        color: #ffccbc;
+    }
+    .table-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .table-controls .table-meta {
+        font-weight: 600;
+        color: #c5cae9;
+    }
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+    .hidden {
+        display: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if scheduler_disabled %}
+<div class="message info">
+    <span>Scheduler is currently disabled. Automated API calls and emails are paused.</span>
+    <a href="{{ url_for('settings') }}" style="color:#c5cae9; text-decoration: underline;">Enable in Settings</a>
+</div>
+{% endif %}
+<div class="card" id="run-now-card">
+    <h2>Run Now</h2>
+    <p>Kick off the Forgotten Movies check immediately instead of waiting for the next schedule.</p>
+    <p>This will first check overseerr for new requests then check tautulli for unwatched old requests and then email users.</p>
+    <form method="post" action="{{ url_for('run_now') }}">
+        <button type="submit">Run Job Now</button>
+    </form>
+</div>
+<div class="card" id="todo-card">
+    <h2>Upcoming Reminders</h2>
+    {% if todo_messages %}
+    <div class="local-flashes">
+        {% for category, text in todo_messages %}
+        <div class="message {{ category|replace('todo-', '') }}">
+            <span>{{ text }}</span>
+            <button type="button" class="close-btn" aria-label="Dismiss">&times;</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if todo_items %}
+    <div class="table-controls" data-table="todo-table">
+        <div class="table-meta">{{ todo_items|length }} total</div>
+        <label>Rows per page:
+            <select class="page-size" data-table="todo-table">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="all">All</option>
+            </select>
+        </label>
+        <div class="pager" data-table="todo-table">
+            <button type="button" class="prev">Prev</button>
+            <span class="page-info"></span>
+            <button type="button" class="next">Next</button>
+        </div>
+    </div>
+    <div class="table-wrapper">
+        <table id="todo-table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort-type="text">Title</th>
+                    <th class="sortable" data-sort-type="text">Media</th>
+                    <th class="sortable" data-sort-type="text">Plex User</th>
+                    <th class="sortable" data-sort-type="text">Email</th>
+                    <th class="sortable" data-sort-type="date">Media Added</th>
+                    <th class="actions-col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in todo_items %}
+                <tr>
+                    <td>{{ item.title }}</td>
+                    <td>{{ item.media_type|title }}</td>
+                    <td>{{ item.plex_username }}</td>
+                    <td>{{ item.email }}</td>
+                    <td data-sort-value="{{ item.media_added_sort }}">{{ item.created_at_display }}</td>
+                    <td class="actions-cell">
+                        <div class="action-menu">
+                            <button type="button" class="menu-trigger" aria-haspopup="true" aria-expanded="false">
+                                <span class="sr-only">Actions</span>&#8942;
+                            </button>
+                            <div class="menu-dropdown" role="menu">
+                                <form method="post" action="{{ url_for('skip_request', request_id=item.id) }}" class="menu-item-form">
+                                    <button type="submit" class="menu-item-button" role="menuitem" data-double-confirm="true" data-second-text="Are you sure?">Don't Send</button>
+                                </form>
+                                <form method="post" action="{{ url_for('send_request_now', request_id=item.id) }}" class="menu-item-form">
+                                    <button type="submit" class="menu-item-button" role="menuitem" data-double-confirm="true" data-second-text="Are you sure?">Send Now</button>
+                                </form>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p>All caught up! No reminders are queued right now.</p>
+    {% endif %}
+</div>
+<div class="card">
+    <h2>Recently Sent Emails</h2>
+    {% if recent_messages %}
+    <div class="local-flashes">
+        {% for category, text in recent_messages %}
+        <div class="message {{ category|replace('recent-', '') }}">
+            <span>{{ text }}</span>
+            <button type="button" class="close-btn" aria-label="Dismiss">&times;</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if recent_emails %}
+    <div class="table-controls" data-table="recent-table">
+        <div class="table-meta">{{ recent_emails|length }} total</div>
+        <label>Rows per page:
+            <select class="page-size" data-table="recent-table">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="all">All</option>
+            </select>
+        </label>
+        <div class="pager" data-table="recent-table">
+            <button type="button" class="prev">Prev</button>
+            <span class="page-info"></span>
+            <button type="button" class="next">Next</button>
+        </div>
+    </div>
+    <div class="table-wrapper">
+        <table id="recent-table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort-type="text">Title</th>
+                    <th class="sortable" data-sort-type="text">Media</th>
+                    <th class="sortable" data-sort-type="text">Plex User</th>
+                    <th class="sortable" data-sort-type="text">Email</th>
+                    <th class="sortable" data-sort-type="date">Media Added</th>
+                    <th class="sortable" data-sort-type="date">Sent At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in recent_emails %}
+                <tr>
+                    <td>{{ item.title }}</td>
+                    <td>{{ item.media_type|title }}</td>
+                    <td>{{ item.plex_username }}</td>
+                    <td>{{ item.email }}</td>
+                    <td data-sort-value="{{ item.media_added_sort }}">{{ item.media_added_display }}</td>
+                    <td data-sort-value="{{ item.email_sent_at_sort }}">{{ item.email_sent_at_display }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p>No reminder emails have been sent yet.</p>
+    {% endif %}
+</div>
+<div class="card" id="unsubscribe-card">
+    <h2>Manage Unsubscribed Emails</h2>
+    {% if unsubscribe_messages %}
+    <div class="local-flashes">
+        {% for category, text in unsubscribe_messages %}
+        <div class="message {{ category|replace('unsubscribe-', '') }}">
+            <span>{{ text }}</span>
+            <button type="button" class="close-btn" aria-label="Dismiss">&times;</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <form id="unsubscribe-form" method="post" action="{{ url_for('unsubscribe_email') }}">
+        <input type="email" name="email" id="unsubscribe-email-input" placeholder="Email address" required>
+        <button type="submit">Unsubscribe</button>
+    </form>
+<div class="table-controls" data-table="unsubscribe-table" {% if not unsubscribe_records %}style="display:none;"{% endif %}>
+    <div class="table-meta"><span id="unsubscribe-count">{{ unsubscribe_records|length }}</span> total</div>
+    <label>Rows per page:
+        <select class="page-size" data-table="unsubscribe-table">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="all">All</option>
+        </select>
+    </label>
+    <div class="pager" data-table="unsubscribe-table">
+        <button type="button" class="prev">Prev</button>
+        <span class="page-info"></span>
+        <button type="button" class="next">Next</button>
+    </div>
+</div>
+<div class="table-wrapper" {% if not unsubscribe_records %}style="display:none;"{% endif %}>
+    <table id="unsubscribe-table">
+        <thead>
+            <tr>
+                <th class="sortable" data-sort-type="text">Email</th>
+                <th class="sortable" data-sort-type="date">Unsubscribed At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="unsubscribe-table-body">
+            {% for record in unsubscribe_records %}
+            <tr data-email="{{ record.email }}">
+                <td data-sort-value="{{ record.email }}">{{ record.email }}</td>
+                <td data-sort-value="{{ record.unsubscribed_at or '' }}">{{ record.unsubscribed_display or 'Unknown' }}</td>
+                <td>
+                    <form class="remove-form" method="post" action="{{ url_for('remove_email') }}" data-email="{{ record.email }}">
+                        <input type="hidden" name="email" value="{{ record.email }}">
+                        <button type="submit">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<p id="unsubscribe-empty" {% if unsubscribe_records %}class="hidden"{% endif %}>No unsubscribed emails yet.</p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    const flashContainers = Array.from(document.querySelectorAll(".local-flashes"));
+    flashContainers.forEach((localContainer) => {
+        const localMessages = Array.from(localContainer.querySelectorAll(".message"));
+        localMessages.forEach((msg) => {
+            const closeBtn = msg.querySelector(".close-btn");
+            const hide = () => msg.classList.add("hidden");
+            setTimeout(hide, 30000);
+            if (closeBtn) {
+                closeBtn.addEventListener("click", () => {
+                    msg.remove();
+                    if (!localContainer.querySelector(".message")) {
+                        localContainer.remove();
+                    }
+                });
+            }
+        });
+    });
+
+    const unsubscribeCard = document.getElementById("unsubscribe-card");
+    if (unsubscribeCard) {
+        const unsubscribeForm = document.getElementById("unsubscribe-form");
+        const unsubscribeInput = document.getElementById("unsubscribe-email-input");
+        const unsubscribeTable = document.getElementById("unsubscribe-table");
+        const unsubscribeTableBody = document.getElementById("unsubscribe-table-body");
+        const unsubscribeControls = unsubscribeCard.querySelector('.table-controls[data-table="unsubscribe-table"]');
+        const unsubscribeWrapper = unsubscribeCard.querySelector('.table-wrapper');
+        const unsubscribeEmpty = document.getElementById("unsubscribe-empty");
+        const unsubscribeCount = document.getElementById("unsubscribe-count");
+
+        const ensureLocalFlashes = () => {
+            let flashes = unsubscribeCard.querySelector(".local-flashes");
+            if (!flashes) {
+                flashes = document.createElement("div");
+                flashes.className = "local-flashes";
+                unsubscribeCard.insertBefore(flashes, unsubscribeForm);
+            }
+            return flashes;
+        };
+
+        const pushUnsubscribeMessage = (type, text) => {
+            const container = ensureLocalFlashes();
+            const existingMessages = container.querySelectorAll(".message");
+            existingMessages.forEach((msg) => msg.remove());
+            const message = document.createElement("div");
+            message.className = `message ${type}`;
+            const span = document.createElement("span");
+            span.textContent = text;
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "close-btn";
+            close.setAttribute("aria-label", "Dismiss");
+            close.textContent = "×";
+            close.addEventListener("click", () => message.remove());
+            message.appendChild(span);
+            message.appendChild(close);
+            container.appendChild(message);
+            setTimeout(() => message.classList.add("hidden"), 30000);
+            setTimeout(() => message.remove(), 32000);
+            unsubscribeCard.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+
+        const updateVisibility = () => {
+            const hasRows = unsubscribeTableBody && unsubscribeTableBody.querySelector("tr");
+            if (unsubscribeControls) {
+                unsubscribeControls.style.display = hasRows ? "" : "none";
+            }
+            if (unsubscribeWrapper) {
+                unsubscribeWrapper.style.display = hasRows ? "" : "none";
+            }
+            if (unsubscribeEmpty) {
+                if (hasRows) {
+                    unsubscribeEmpty.classList.add("hidden");
+                } else {
+                    unsubscribeEmpty.classList.remove("hidden");
+                }
+            }
+        };
+
+        const setCount = (value) => {
+            if (unsubscribeCount) {
+                unsubscribeCount.textContent = String(Math.max(0, value));
+            }
+        };
+
+        const recalcCount = () => {
+            const rows = unsubscribeTableBody ? unsubscribeTableBody.querySelectorAll("tr").length : 0;
+            setCount(rows);
+        };
+
+        const buildRow = (data) => {
+            const row = document.createElement("tr");
+            row.dataset.email = data.email;
+
+            const emailCell = document.createElement("td");
+            emailCell.dataset.sortValue = data.email;
+            emailCell.textContent = data.email;
+            row.appendChild(emailCell);
+
+            const dateCell = document.createElement("td");
+            dateCell.dataset.sortValue = data.unsubscribed_at || "";
+            dateCell.textContent = data.unsubscribed_display || data.unsubscribed_at || "Unknown";
+            row.appendChild(dateCell);
+
+            const actionCell = document.createElement("td");
+            const form = document.createElement("form");
+            form.className = "remove-form";
+            form.method = "post";
+            form.action = data.remove_url;
+            form.dataset.email = data.email;
+            const hidden = document.createElement("input");
+            hidden.type = "hidden";
+            hidden.name = "email";
+            hidden.value = data.email;
+            const button = document.createElement("button");
+            button.type = "submit";
+            button.textContent = "Remove";
+            form.appendChild(hidden);
+            form.appendChild(button);
+            actionCell.appendChild(form);
+            row.appendChild(actionCell);
+            return row;
+        };
+
+        const attachRow = (row) => {
+            if (!unsubscribeTableBody) {
+                return;
+            }
+            const existing = unsubscribeTableBody.querySelector(`tr[data-email="${row.dataset.email}"]`);
+            if (existing) {
+                existing.replaceWith(row);
+            } else {
+                unsubscribeTableBody.appendChild(row);
+            }
+            const removeForm = row.querySelector(".remove-form");
+            if (removeForm) {
+                hookRemoveForm(removeForm);
+            }
+            if (unsubscribeTable && unsubscribeTable._fm) {
+                unsubscribeTable._fm.refresh();
+            }
+            updateVisibility();
+            recalcCount();
+        };
+
+        const removeRow = (email) => {
+            if (!unsubscribeTableBody) {
+                return;
+            }
+            const existing = unsubscribeTableBody.querySelector(`tr[data-email="${email}"]`);
+            if (existing) {
+                existing.remove();
+                if (unsubscribeTable && unsubscribeTable._fm) {
+                    unsubscribeTable._fm.refresh();
+                }
+            }
+            updateVisibility();
+            recalcCount();
+        };
+
+        const submitForm = async (form) => {
+            const formData = new FormData(form);
+            const response = await fetch(form.action, {
+                method: form.method || "POST",
+                body: formData,
+                headers: {
+                    "Accept": "application/json",
+                    "X-Requested-With": "fetch"
+                },
+            });
+            if (!response.ok) {
+                throw new Error("Request failed");
+            }
+            return response.json();
+        };
+
+        const hookRemoveForm = (form) => {
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                try {
+                    const data = await submitForm(form);
+                    if (data.success) {
+                        removeRow(data.email);
+                        pushUnsubscribeMessage("success", data.message || `Removed ${data.email} from the unsubscribe list.`);
+                    } else {
+                        pushUnsubscribeMessage("error", data.message || "Unable to remove address.");
+                    }
+                } catch {
+                    pushUnsubscribeMessage("error", "Failed to contact server. Please try again.");
+                }
+            });
+        };
+
+        if (unsubscribeForm) {
+            unsubscribeForm.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const emailValue = (form.email.value || "").trim();
+                if (!emailValue) {
+                    return;
+                }
+                try {
+                    const data = await submitForm(form);
+                    if (data.success) {
+                        const row = buildRow(data);
+                        attachRow(row);
+                        pushUnsubscribeMessage("success", data.message || `Added ${data.email} to the unsubscribe list.`);
+                        form.reset();
+                        if (unsubscribeInput) {
+                            unsubscribeInput.focus({ preventScroll: true });
+                        }
+                    } else {
+                        pushUnsubscribeMessage("error", data.message || "Unable to add address.");
+                    }
+                } catch {
+                    pushUnsubscribeMessage("error", "Failed to contact server. Please try again.");
+                }
+            });
+        }
+
+        const existingRemoveForms = unsubscribeCard.querySelectorAll(".remove-form");
+        existingRemoveForms.forEach(hookRemoveForm);
+
+        updateVisibility();
+        recalcCount();
+    }
+
+    initActionMenus();
+
+    const configs = [
+        { tableId: "todo-table", defaultSize: 10 },
+        { tableId: "recent-table", defaultSize: 10 },
+        { tableId: "unsubscribe-table", defaultSize: 10 }
+    ];
+
+    configs.forEach(({ tableId, defaultSize }) => initTable(tableId, defaultSize));
+
+    function initTable(tableId, defaultSize) {
+        const table = document.getElementById(tableId);
+        if (!table) {
+            return;
+        }
+        const tbody = table.tBodies[0];
+        let rows = Array.from(tbody.querySelectorAll("tr"));
+
+        const pager = document.querySelector(`.pager[data-table="${tableId}"]`);
+        const pageInfo = pager ? pager.querySelector('.page-info') : null;
+        const prevBtn = pager ? pager.querySelector('.prev') : null;
+        const nextBtn = pager ? pager.querySelector('.next') : null;
+        const sizeSelect = document.querySelector(`.page-size[data-table="${tableId}"]`);
+        const headers = Array.from(table.querySelectorAll('thead th.sortable'));
+        const sortState = { index: -1, direction: 'asc' };
+
+        if (!sizeSelect) {
+            return;
+        }
+
+        if (rows.length === 0) {
+            sizeSelect.style.display = 'none';
+            if (pager) { pager.style.display = 'none'; }
+            return;
+        }
+
+        const defaultValue = defaultSize === 'all' ? 'all' : String(defaultSize);
+        sizeSelect.value = defaultValue;
+
+        let pageSize = resolvePageSize(defaultValue);
+        let currentPage = 1;
+
+        initSorting();
+        render();
+
+        sizeSelect.addEventListener('change', (event) => {
+            pageSize = resolvePageSize(event.target.value);
+            currentPage = 1;
+            render();
+        });
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage -= 1;
+                    render();
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(rows.length / pageSize));
+                if (currentPage < totalPages) {
+                    currentPage += 1;
+                    render();
+                }
+            });
+        }
+
+        function resolvePageSize(value) {
+            return value === 'all' ? Infinity : parseInt(value, 10);
+        }
+
+        function render() {
+            const totalRows = rows.length;
+            if (totalRows === 0) {
+                if (pager) { pager.style.display = 'none'; }
+                sizeSelect.style.display = 'none';
+                if (pageInfo) { pageInfo.textContent = ''; }
+                return;
+            }
+            sizeSelect.style.display = '';
+            const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(totalRows / pageSize));
+            if (currentPage > totalPages) {
+                currentPage = totalPages;
+            }
+            const startIndex = pageSize === Infinity ? 0 : (currentPage - 1) * pageSize;
+            const endIndex = pageSize === Infinity ? totalRows : startIndex + pageSize;
+
+            rows.forEach((row, index) => {
+                row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
+            });
+
+            if (pager && pageInfo) {
+                if (totalPages <= 1) {
+                    pager.style.display = 'none';
+                } else {
+                    pager.style.display = 'flex';
+                    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+                    if (prevBtn) prevBtn.disabled = currentPage === 1;
+                    if (nextBtn) nextBtn.disabled = currentPage === totalPages;
+                }
+            }
+        }
+
+        function initSorting() {
+            if (!headers.length) {
+                return;
+            }
+            headers.forEach((header, index) => {
+                header.tabIndex = 0;
+                header.addEventListener('click', () => toggleSort(index, header.dataset.sortType || 'text'));
+                header.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleSort(index, header.dataset.sortType || 'text');
+                    }
+                });
+            });
+        }
+
+        function toggleSort(columnIndex, sortType) {
+            const nextDirection =
+                sortState.index === columnIndex && sortState.direction === 'asc' ? 'desc' : 'asc';
+            sortState.index = columnIndex;
+            sortState.direction = nextDirection;
+
+            updateHeaderStates(columnIndex, nextDirection);
+
+            rows.sort((a, b) => compareRows(a, b, columnIndex, sortType, nextDirection));
+            rows.forEach((row) => tbody.appendChild(row));
+            currentPage = 1;
+            render();
+        }
+
+        function updateHeaderStates(activeIndex, direction) {
+            headers.forEach((header, index) => {
+                if (index === activeIndex) {
+                    header.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending');
+                    header.classList.remove('sort-asc', 'sort-desc');
+                    header.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+                } else {
+                    header.removeAttribute('aria-sort');
+                    header.classList.remove('sort-asc', 'sort-desc');
+                }
+            });
+        }
+
+        function compareRows(rowA, rowB, columnIndex, sortType, direction) {
+            const valueA = extractValue(rowA, columnIndex);
+            const valueB = extractValue(rowB, columnIndex);
+            const multiplier = direction === 'asc' ? 1 : -1;
+
+            if (sortType === 'number') {
+                const aNum = parseFloat(valueA);
+                const bNum = parseFloat(valueB);
+                if (!Number.isNaN(aNum) || !Number.isNaN(bNum)) {
+                    const safeA = Number.isNaN(aNum) ? (direction === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY) : aNum;
+                    const safeB = Number.isNaN(bNum) ? (direction === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY) : bNum;
+                    return (safeA - safeB) * multiplier;
+                }
+            }
+
+            if (sortType === 'date') {
+                const timeA = parseDate(valueA);
+                const timeB = parseDate(valueB);
+                if (!Number.isNaN(timeA) || !Number.isNaN(timeB)) {
+                    const safeA = Number.isNaN(timeA) ? (direction === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY) : timeA;
+                    const safeB = Number.isNaN(timeB) ? (direction === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY) : timeB;
+                    return (safeA - safeB) * multiplier;
+                }
+            }
+
+            return valueA.localeCompare(valueB, undefined, { sensitivity: 'base' }) * multiplier;
+        }
+
+        function extractValue(row, columnIndex) {
+            const cell = row.cells[columnIndex];
+            if (!cell) {
+                return '';
+            }
+            const value = cell.dataset.sortValue ?? cell.textContent;
+            return (value || '').trim();
+        }
+
+        function parseDate(value) {
+            if (!value) {
+                return Number.NaN;
+            }
+            const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+            return Date.parse(normalized);
+        }
+        table._fm = {
+            refresh() {
+                rows = Array.from(tbody.querySelectorAll("tr"));
+                render();
+            }
+        };
+    }
+
+    function initActionMenus() {
+        const menus = Array.from(document.querySelectorAll(".action-menu"));
+        if (!menus.length) {
+            return;
+        }
+
+        let openMenu = null;
+
+        function resetDoubleConfirm(menu) {
+            if (!menu) {
+                return;
+            }
+            const buttons = menu.querySelectorAll('.menu-item-button[data-double-confirm="true"]');
+            buttons.forEach((button) => {
+                if (button.dataset.originalText) {
+                    button.textContent = button.dataset.originalText;
+                }
+                button.classList.remove('confirming');
+                delete button.dataset.confirmState;
+            });
+        }
+
+        function closeMenu(menu) {
+            if (!menu) {
+                return;
+            }
+            resetDoubleConfirm(menu);
+            menu.classList.remove("open");
+            const trigger = menu.querySelector(".menu-trigger");
+            if (trigger) {
+                trigger.setAttribute("aria-expanded", "false");
+            }
+            if (openMenu === menu) {
+                openMenu = null;
+            }
+        }
+
+        function openMenuFor(menu, trigger) {
+            if (openMenu && openMenu !== menu) {
+                closeMenu(openMenu);
+            }
+            openMenu = menu;
+            menu.classList.add("open");
+            if (trigger) {
+                trigger.setAttribute("aria-expanded", "true");
+            }
+            const firstItem = menu.querySelector(".menu-item-button");
+            if (firstItem) {
+                firstItem.focus();
+            }
+        }
+
+        menus.forEach((menu) => {
+            const trigger = menu.querySelector(".menu-trigger");
+            const dropdown = menu.querySelector(".menu-dropdown");
+            if (!trigger || !dropdown) {
+                return;
+            }
+            menu.addEventListener("click", (event) => event.stopPropagation());
+            trigger.addEventListener("click", (event) => {
+                event.preventDefault();
+                if (menu.classList.contains("open")) {
+                    closeMenu(menu);
+                } else {
+                    openMenuFor(menu, trigger);
+                }
+            });
+            trigger.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    if (menu.classList.contains("open")) {
+                        closeMenu(menu);
+                    } else {
+                        openMenuFor(menu, trigger);
+                    }
+                }
+            });
+            dropdown.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeMenu(menu);
+                    trigger.focus();
+                }
+            });
+        });
+
+        document.addEventListener("click", (event) => {
+            if (!openMenu) {
+                return;
+            }
+            if (!openMenu.contains(event.target)) {
+                closeMenu(openMenu);
+            }
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && openMenu) {
+                closeMenu(openMenu);
+            }
+        });
+
+        const actionForms = Array.from(document.querySelectorAll(".menu-item-form"));
+        actionForms.forEach((form) => {
+            const button = form.querySelector(".menu-item-button");
+            const doubleConfirm = button && button.dataset.doubleConfirm === "true";
+            const confirmMessage = form.dataset.confirm;
+
+            if (doubleConfirm && button) {
+                button.addEventListener("click", (event) => {
+                    if (button.dataset.confirmState === "armed") {
+                        if (button.dataset.originalText) {
+                            button.textContent = button.dataset.originalText;
+                        }
+                        button.classList.remove("confirming");
+                        delete button.dataset.confirmState;
+                        return;
+                    }
+                    event.preventDefault();
+                    button.dataset.originalText = button.dataset.originalText || button.textContent;
+                    button.dataset.confirmState = "armed";
+                    button.textContent = button.dataset.secondText || "Are you sure?";
+                    button.classList.add("confirming");
+                });
+            }
+
+            form.addEventListener("submit", (event) => {
+                if (confirmMessage && !window.confirm(confirmMessage)) {
+                    event.preventDefault();
+                    return;
+                }
+                if (openMenu) {
+                    closeMenu(openMenu);
+                }
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

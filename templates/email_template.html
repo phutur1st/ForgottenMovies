@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; font-size: 15px; padding: 0; margin: 0;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+        <p>Hello {{ plex_username }}!</p>
+        <p>
+            The {{ media_type }} <strong>{{ title }}</strong> that you requested was added about {{ time_since_text }} ago but you haven't watched it yet.
+            Wanna give it a watch?
+        </p>
+
+        <div style="text-align: center; margin: 24px 0;">
+            {% if poster_url %}
+                {% if plex_url %}
+                    <a href="{{ plex_url }}" target="_blank">
+                        <img src="{{ poster_url }}" alt="{{ title }}" style="width:300px; height:auto; border-radius:10px;">
+                    </a>
+                {% else %}
+                    <img src="{{ poster_url }}" alt="{{ title }}" style="width:300px; height:auto; border-radius:10px;">
+                {% endif %}
+            {% endif %}
+
+            {% if plex_url %}
+                <p>
+                    <a href="{{ plex_url }}" target="_blank"
+                       style="background-color: #ebaf00; color: #ffffff; font-size: 16px; font-family: Arial, sans-serif;
+                              text-decoration: none; padding: 12px 24px; border-radius: 5px; display: inline-block; font-weight: bold;">
+                        Open in Plex (Desktop/Browser Only)
+                    </a>
+                    <br>Sadly for mobile you have to navigate there yourself due to plex app limitations.
+                </p>
+            {% endif %}
+        </div>
+
+        <p>
+            You'll only get one email per movie or TV show that you requested, and only one reminder every so often.
+            If you have any feedback or don't want to receive these emails, please reach out.
+        </p>
+
+        {% if request_url %}
+            <div style="margin: 24px 0;">
+                Want to request something new? <a href="{{ request_url }}" target="_blank"
+                   style="background-color: #793ae8; color: #ffffff; font-size: 12px; font-family: Arial, sans-serif;
+                          text-decoration: none; padding: 5px 12px; border-radius: 5px; display: inline-block; font-weight: bold;">
+                    Open Request App
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

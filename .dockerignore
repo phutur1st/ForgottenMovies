@@ -1,0 +1,5 @@
+.git
+.env
+.gitignore
+docker-compose.yml
+__pycache__

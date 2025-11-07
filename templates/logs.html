@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="level-actions">
+    <form class="level-form" method="post" action="{{ url_for('update_log_level') }}">
+        <label for="level">Log level:</label>
+        <select name="level" id="level">
+            {% for level in available_levels %}
+                <option value="{{ level }}" {% if level == current_level %}selected{% endif %}>{{ level }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Set Level</button>
+            </form>
+            <form class="clear-form" method="post" action="{{ url_for('clear_logs') }}">
+                <button type="submit">Clear Logs</button>
+            </form>
+            <label class="auto-refresh">
+                <input type="checkbox" id="auto-refresh-toggle" checked>
+                Auto-refresh
+            </label>
+        </div>
+<pre id="log-content">{{ log_text }}</pre>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    (function() {
+        const logContent = document.getElementById("log-content");
+        const toggle = document.getElementById("auto-refresh-toggle");
+        if (!logContent) { return; }
+
+        const fetchLogs = () => {
+            if (toggle && !toggle.checked) { return; }
+            fetch("{{ url_for('logs_data') }}", { cache: "no-store" })
+                .then((resp) => resp.json())
+                .then((data) => {
+                    logContent.textContent = data.log || "Log file is empty.";
+                    logContent.scrollTop = logContent.scrollHeight;
+                })
+                .catch(() => {});
+        };
+
+        fetchLogs();
+        setInterval(fetchLogs, 5000);
+    })();
+</script>
+{% endblock %}
