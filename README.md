@@ -110,6 +110,56 @@ docker run -d \
   -v <your_data_path>:/app/data \
   pyroghostx/forgottenmovies:latest
 ```
+
+## Unraid docker run delpoyment
+```bash
+docker run
+  -d
+  --name='forgotten-movies'
+  --net='unraid'
+  --pids-limit 2048
+  -e TZ="Europe/Berlin"
+  -e HOST_OS="Unraid"
+  -e HOST_HOSTNAME="UNRAID-Server"
+  -e HOST_CONTAINERNAME="forgotten-movies"
+  -e 'PUID'='99'
+  -e 'PGID'='100'
+  -e 'TZ'='Europe/Berlin'
+  -e 'TAUTULLI_URL'='http://192.168.178.29:8181/api/v2'
+  -e 'TAUTULLI_API_KEY'='68xxxxxxxxxxxxxxxxx73'
+  -e 'OVERSEERR_URL'='http://192.168.178.29:5055/api/v1'
+  -e 'OVERSEERR_API_KEY'='MZZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxNZz='
+  -e 'OVERSEERR_NUM_OF_HISTORY_RECORDS'='200'
+  -e 'REQUEST_URL'='https://xyz.xyz.de'
+  -e 'THEMOVIEDB_API_KEY'='1xxxxxxxxxxxxxxxxxxxxxxxxxxxx5'
+  -e 'SMTP_SERVER'='xxxxxxxxx'
+  -e 'SMTP_PORT'='587'
+  -e 'FROM_NAME'='Plex'
+  -e 'FROM_EMAIL_ADDRESS'='ab@xyz.de'
+  -e 'EMAIL_PASSWORD'='xxxxxxxxxxxxxxxxxx'
+  -e 'BCC_EMAIL_ADDRESS'='email@gmail.com'
+  -e 'ADMIN_NAME'='Admin'
+  -e 'DAYS_SINCE_REQUEST'='90'
+  -e 'DAYS_SINCE_REQUEST_EMAIL_TEXT'='3 Months'
+  -e 'HOURS_BETWEEN_EMAILS'='48'
+  -e 'JOB_INTERVAL_SECONDS'='3600'
+  -e 'INITIAL_DELAY_SECONDS'='600'
+  -e 'FLASK_SECRET_KEY'='119cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx772'
+  -e 'LOG_LEVEL'='INFO'
+  -e 'DEBUG_MODE'='false'
+  -e 'DEBUG_MAX_EMAILS'='2'
+  -e 'DEBUG_EMAIL'='xyz@xyz.com'
+  -e 'DISABLE_SCHEDULER'='true'
+  -e 'restart'='unless-stopped'
+  -l net.unraid.docker.managed=dockerman
+  -l net.unraid.docker.webui='http://[IP]:[PORT:8741]'
+  -l net.unraid.docker.icon='https://raw.githubusercontent.com/PyroghostX/ForgottenMovies/refs/heads/main/files/logo.png'
+  -p '8741:8741/tcp'
+  -v '/mnt/cache/appdata/mediaserver/forgotten-movies':'/app/data':'rw'
+  --restart=unless-stopped 'pyroghostx/forgottenmovies:latest'
+  ```
+
+
 # Customising the Email Template
 
 1. In your /app/data folder Copy the "email_template_original.html" and name it "email_template.html"
@@ -150,6 +200,12 @@ Because the template uses Jinja, you can wrap sections in `{% if plex_url %}...{
 
 - Set `DEBUG_MODE=true` to reroute mail to `DEBUG_EMAIL` (or `FROM_EMAIL_ADDRESS` if `DEBUG_EMAIL` is blank) and cap sends via `DEBUG_MAX_EMAILS`.
 - Logs rotate when they reach `LOG_FILE_MAX_BYTES`. Adjust or disable rotation via environment variables if needed.
+
+## Reading the logs
+
+- "Registered email user": You'll see this for each new email it finds in the overseerr requests.
+
+- "smtplib.SMTPAuthenticationError: (535, b'5.7.8 Username and Password not accepted.": Your email or password is wrong, check email address and make sure you setup an app password https://myaccount.google.com/apppasswords
 
 
 # Architecture Overview

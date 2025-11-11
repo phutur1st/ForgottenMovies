@@ -699,7 +699,26 @@ def _attempt_send_request(
         mobile_url=mobile_url,
     )
 
-    recipient = send_email(email_value, email_subject, email_body, is_html=True)
+    if DEBUG_MODE:
+        logger.debug(
+            "Preparing email send for request %s: recipient=%s, subject=%s, rating_key=%s, media_type=%s",
+            request_id,
+            email_value,
+            email_subject,
+            rating_key,
+            media_type,
+        )
+    try:
+        recipient = send_email(email_value, email_subject, email_body, is_html=True)
+    except Exception:
+        logger.exception(
+            "Email send failed for %s (%s) [request %s, rating_key=%s].",
+            email_value,
+            title,
+            request_id,
+            rating_key,
+        )
+        raise
     logger.info(
         "Sent email to %s (%s) via %s for %s (%s).",
         plex_username,
@@ -757,6 +776,13 @@ def transform_plex_url(plex_url):
     
 # Send email notification
 def send_email(to_address, subject, body, is_html=False):
+    if DEBUG_MODE:
+        logger.debug(
+            "send_email invoked for %s (subject=%s, html=%s).",
+            to_address,
+            subject,
+            is_html,
+        )
     if is_html:
         msg = MIMEMultipart("alternative")
         msg.attach(MIMEText(body, "html"))
@@ -777,10 +803,45 @@ def send_email(to_address, subject, body, is_html=False):
         msg['To'] = actual_recipient
         msg['Bcc'] = BCC_EMAIL_ADDRESS
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-        server.starttls()
-        server.login(FROM_EMAIL_ADDRESS, EMAIL_PASSWORD)
-        server.send_message(msg)
+    if DEBUG_MODE:
+        logger.debug(
+            "Connecting to SMTP server %s:%s as %s.", SMTP_SERVER, SMTP_PORT, FROM_EMAIL_ADDRESS
+        )
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            if DEBUG_MODE:
+                logger.debug("SMTP connection established, issuing STARTTLS.")
+            server.starttls()
+            if DEBUG_MODE:
+                logger.debug("STARTTLS negotiation succeeded; logging in.")
+            server.login(FROM_EMAIL_ADDRESS, EMAIL_PASSWORD)
+            if DEBUG_MODE:
+                logger.debug("SMTP login succeeded; sending message to %s.", actual_recipient)
+            server.send_message(msg)
+            if DEBUG_MODE:
+                try:
+                    server.noop()
+                    logger.debug("SMTP NOOP succeeded after send.")
+                except smtplib.SMTPException as exc:
+                    logger.debug("SMTP NOOP failed post-send (non-fatal): %s", exc)
+    except smtplib.SMTPException as exc:
+        logger.error(
+            "SMTP error while sending to %s (subject=%s): %s",
+            actual_recipient,
+            subject,
+            exc,
+        )
+        raise
+    except Exception as exc:
+        logger.error(
+            "Unexpected error while sending to %s (subject=%s): %s",
+            actual_recipient,
+            subject,
+            exc,
+        )
+        raise
+    if DEBUG_MODE:
+        logger.debug("Email sent successfully to %s.", actual_recipient)
     return actual_recipient
 
 # Main logic
