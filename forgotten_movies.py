@@ -402,6 +402,49 @@ def get_overseerr_requests():
     response.raise_for_status()
     return response.json()['results']
 
+def _check_overseerr_connection(timeout=(5, 15)) -> bool:
+    if not OVERSEERR_URL or not OVERSEERR_API_KEY:
+        logger.error("OVERSEERR CONNECTION FAILED: missing OVERSEERR_URL or OVERSEERR_API_KEY.")
+        return False
+    test_url = f"{OVERSEERR_URL}/request"
+    params = {"take": 1, "filter": "available", "sort": "added"}
+    headers = {"X-Api-Key": OVERSEERR_API_KEY}
+    try:
+        resp = requests.get(test_url, params=params, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return True
+    except requests.RequestException as exc:
+        logger.error("OVERSEERR CONNECTION FAILED: %s", exc)
+        return False
+
+def _check_tautulli_connection(timeout=(5, 15)) -> bool:
+    if not TAUTULLI_URL or not TAUTULLI_API_KEY:
+        logger.error("TAUTULLI CONNECTION FAILED: missing TAUTULLI_URL or TAUTULLI_API_KEY.")
+        return False
+    params = {'apikey': TAUTULLI_API_KEY, 'cmd': 'get_server_info'}
+    try:
+        resp = requests.get(TAUTULLI_URL, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get('response', {}).get('result') != 'success':
+            logger.error("TAUTULLI CONNECTION FAILED: unexpected response %s", data)
+            return False
+        return True
+    except requests.RequestException as exc:
+        logger.error("TAUTULLI CONNECTION FAILED: %s", exc)
+        return False
+    except ValueError as exc:
+        logger.error("TAUTULLI CONNECTION FAILED: invalid JSON response (%s)", exc)
+        return False
+
+def run_startup_checks() -> bool:
+    logger.info("Running startup connectivity checks.")
+    overseerr_ok = _check_overseerr_connection()
+    tautulli_ok = _check_tautulli_connection()
+    if overseerr_ok and tautulli_ok:
+        logger.info("All external services reachable.")
+    return overseerr_ok and tautulli_ok
+
 def get_tmdb_poster(tmdb_id, media_type):
     url = f"https://api.themoviedb.org/3/{'movie' if media_type == 'movie' else 'tv'}/{tmdb_id}"
     try:
@@ -742,6 +785,13 @@ def send_email(to_address, subject, body, is_html=False):
 
 # Main logic
 def main():
+    if not _check_overseerr_connection():
+        logger.info("Aborting run due to Overseerr connectivity issues.")
+        return
+    if not _check_tautulli_connection():
+        logger.info("Aborting run due to Tautulli connectivity issues.")
+        return
+
     logger.info("Step 1: Grab requests from Overseerr")
     # Step 1: Fetch new Overseerr requests and add them to the database if not already present
     overseerr_requests = get_overseerr_requests()
@@ -758,7 +808,15 @@ def main():
         _ensure_email_user_record(requested_by_email)
 
         if not request_db.search(Request.id == request_id):
-            media_added_dt = datetime.fromisoformat(request['media']['mediaAddedAt'][:-1])
+            media_added_raw = request['media'].get('mediaAddedAt') or request['media'].get('mediaAddedDate')
+            if media_added_raw:
+                media_added_clean = media_added_raw.rstrip('Z')
+                try:
+                    media_added_dt = datetime.fromisoformat(media_added_clean)
+                except ValueError:
+                    media_added_dt = datetime.now()
+            else:
+                media_added_dt = datetime.now()
             created_now_iso = datetime.now().isoformat()
             tmdb_id = request['media']['tmdbId']
             ratingkey = request['media']['ratingKey']

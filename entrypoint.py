@@ -5,6 +5,8 @@ import sys
 import time
 from typing import List
 
+from forgotten_movies import run_startup_checks
+
 
 def _build_gunicorn_command() -> List[str]:
     workers = os.getenv("GUNICORN_WORKERS", "2")
@@ -30,6 +32,8 @@ def _build_gunicorn_command() -> List[str]:
 
 
 def main() -> None:
+    run_startup_checks()
+
     processes = []
 
     scheduler_proc = subprocess.Popen([sys.executable, "scheduler_runner.py"])
