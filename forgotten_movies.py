@@ -770,7 +770,7 @@ def transform_plex_url(plex_url):
         return None, None
 
     # Replace #! with web/index.html#! for browser link
-    browser_url = plex_url.replace('#!', 'web/index.html#!')
+    browser_url = plex_url
 
     # Construct a mobile-friendly Plex link using regex to extract server and key details
     import re
@@ -893,6 +893,8 @@ def main():
         _ensure_email_user_record(requested_by_email)
 
         if not request_db.search(Request.id == request_id):
+            media = request['media']
+            
             media_added_raw = request['media'].get('mediaAddedAt') or request['media'].get('mediaAddedDate')
             if media_added_raw:
                 media_added_clean = media_added_raw.rstrip('Z')
@@ -909,10 +911,10 @@ def main():
             requested_by_username = request['requestedBy']['plexUsername']
             # Resolve Plex URLs (new Overseerr fields + backward compatibility)
             raw_plex_url = media.get('plexUrl') or media.get('mediaUrl')
-            ios_mobile_url = media.get('iOSPlexUrl')
+            mobile_url = media.get('iOSPlexUrl')
             
             plex_url, fallback_mobile = transform_plex_url(raw_plex_url)
-            mobile_url = ios_mobile_url or fallback_mobile
+            mobile_url = mobile_url or fallback_mobile
             # Fetch poster URL from TMDB and add it to the database
             poster_url = get_tmdb_poster(tmdb_id, media_type)
 
