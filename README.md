@@ -31,6 +31,10 @@ Forgotten Movies keeps Plex requests from gathering dust. It watches Overseerr f
   <img src="files/screenshot_website.png" alt="Screenshot Website" width="788">
 </p>
 
+<p align="center">
+  <img src="files/screenshot_website2.png" alt="Screenshot Website" width="788">
+</p>
+
 # Environment Variables
 
 | Key | Description |
