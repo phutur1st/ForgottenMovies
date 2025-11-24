@@ -230,6 +230,7 @@ def _stable_doc_id(email: str) -> int:
 
 SCHEDULER_DISABLED_KEY = "scheduler_disabled"
 DEFAULT_SCHEDULER_DISABLED = os.getenv("DISABLE_SCHEDULER", "false").lower() == "true"
+LAST_WATCH_STATUS_CHECK_KEY = "last_watch_status_check"
 
 if not settings_db.contains(Setting.key == SCHEDULER_DISABLED_KEY):
     settings_db.insert({"key": SCHEDULER_DISABLED_KEY, "value": DEFAULT_SCHEDULER_DISABLED})
@@ -242,6 +243,31 @@ def is_scheduler_disabled() -> bool:
 
 def set_scheduler_disabled(value: bool) -> None:
     settings_db.upsert({"key": SCHEDULER_DISABLED_KEY, "value": bool(value)}, Setting.key == SCHEDULER_DISABLED_KEY)
+
+
+def get_last_watch_status_check() -> datetime | None:
+    """Get the timestamp of the last watch status check."""
+    record = settings_db.get(Setting.key == LAST_WATCH_STATUS_CHECK_KEY)
+    if record and record.get("value"):
+        return _parse_iso(record.get("value"))
+    return None
+
+
+def set_last_watch_status_check(timestamp: datetime) -> None:
+    """Set the timestamp of the last watch status check."""
+    settings_db.upsert(
+        {"key": LAST_WATCH_STATUS_CHECK_KEY, "value": timestamp.isoformat()},
+        Setting.key == LAST_WATCH_STATUS_CHECK_KEY
+    )
+
+
+def should_run_watch_status_check() -> bool:
+    """Check if 24 hours have passed since the last watch status check."""
+    last_check = get_last_watch_status_check()
+    if last_check is None:
+        return True
+    time_since_check = datetime.now() - last_check
+    return time_since_check >= timedelta(hours=24)
 
 
 def _parse_iso(value: str | None) -> datetime:
@@ -359,7 +385,11 @@ def check_unwatched_emails_status() -> dict[str, int]:
     Updates date_watched field when content is found in watch history.
     Returns dict with counts of checked, watched, and failed items.
     """
-    logger.info("Starting daily watch status check for unwatched sent emails")
+    logger.info("Starting watch status check for unwatched sent emails")
+
+    # Record the timestamp of this check
+    set_last_watch_status_check(datetime.now())
+
     stats = {"checked": 0, "watched": 0, "failed": 0}
 
     unwatched_emails = [rec for rec in email_db.all() if not rec.get("date_watched")]
@@ -961,10 +991,23 @@ def main():
         return
 
     logger.info("Step 1: Check watch status for unwatched sent emails")
-    try:
-        check_unwatched_emails_status()
-    except Exception as exc:
-        logger.exception("Watch status check failed: %s", exc)
+    if should_run_watch_status_check():
+        try:
+            check_unwatched_emails_status()
+        except Exception as exc:
+            logger.exception("Watch status check failed: %s", exc)
+    else:
+        last_check = get_last_watch_status_check()
+        if last_check:
+            time_since = datetime.now() - last_check
+            hours_remaining = 24 - (time_since.total_seconds() / 3600)
+            logger.info(
+                "Skipping watch status check (last run: %s, %.1f hours until next check)",
+                last_check.strftime("%Y-%m-%d %H:%M:%S"),
+                hours_remaining
+            )
+        else:
+            logger.info("Skipping watch status check (timestamp tracking issue)")
 
     logger.info("Step 2: Grab requests from Overseerr")
     # Step 1: Fetch new Overseerr requests and add them to the database if not already present
