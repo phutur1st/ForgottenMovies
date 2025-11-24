@@ -324,6 +324,12 @@ def get_recent_sent_emails(limit: int | None = None):
                 media_raw = media_raw_candidate or fallback_request.get("createdAt")
         media_dt = _parse_iso(media_raw)
         media_display = media_dt.strftime("%Y-%m-%d %H:%M") if media_dt != datetime.min else (media_raw or "")
+
+        watched_raw = rec.get("date_watched")
+        watched_dt = _parse_iso(watched_raw)
+        watched_display = watched_dt.strftime("%Y-%m-%d %H:%M") if watched_dt != datetime.min else "Unwatched"
+        watched_sort = watched_dt.isoformat() if watched_dt != datetime.min else ""
+
         items.append(
             {
                 "title": rec.get("title", "Unknown"),
@@ -334,6 +340,8 @@ def get_recent_sent_emails(limit: int | None = None):
                 "email_sent_at_sort": sent_dt.isoformat() if sent_dt != datetime.min else (sent_raw or ""),
                 "media_added_display": media_display,
                 "media_added_sort": media_dt.isoformat() if media_dt != datetime.min else (media_raw or ""),
+                "date_watched_display": watched_display,
+                "date_watched_sort": watched_sort,
                 "_sort": sent_dt or datetime.min,
             }
         )
@@ -343,6 +351,80 @@ def get_recent_sent_emails(limit: int | None = None):
     for item in items:
         item.pop("_sort", None)
     return items
+
+
+def check_unwatched_emails_status() -> dict[str, int]:
+    """
+    Check all unwatched sent emails to see if users have watched the content.
+    Updates date_watched field when content is found in watch history.
+    Returns dict with counts of checked, watched, and failed items.
+    """
+    logger.info("Starting daily watch status check for unwatched sent emails")
+    stats = {"checked": 0, "watched": 0, "failed": 0}
+
+    unwatched_emails = [rec for rec in email_db.all() if not rec.get("date_watched")]
+
+    for rec in unwatched_emails:
+        stats["checked"] += 1
+        plex_username = rec.get("plex_username")
+        rating_key = rec.get("rating_key")
+        media_type = rec.get("mediaType")
+        email = rec.get("email")
+        title = rec.get("title", "Unknown")
+        tmdb_id = rec.get("tmdbId")
+
+        if not plex_username or not rating_key or not media_type:
+            logger.debug("Skipping email record with missing data: %s", rec)
+            continue
+
+        try:
+            watch_history = has_user_watched_media(plex_username, rating_key, media_type)
+            if watch_history:
+                # Extract the actual watch date from Tautulli history
+                # Tautulli returns a timestamp in seconds, we need to convert to ISO format
+                watch_record = watch_history[0]
+                watch_timestamp = watch_record.get('stopped') or watch_record.get('date')
+
+                if watch_timestamp:
+                    try:
+                        watched_at = datetime.fromtimestamp(int(watch_timestamp)).isoformat()
+                    except (ValueError, TypeError):
+                        # Fallback to current time if timestamp is invalid
+                        logger.warning("Invalid timestamp from Tautulli for %s: %s", title, watch_timestamp)
+                        watched_at = datetime.now().isoformat()
+                else:
+                    # Fallback to current time if no timestamp available
+                    watched_at = datetime.now().isoformat()
+
+                email_db.update(
+                    {"date_watched": watched_at},
+                    (Email.email == email) & (Email.tmdbId == str(tmdb_id))
+                )
+                stats["watched"] += 1
+                logger.info(
+                    "Marked %s (%s) as watched for %s on %s",
+                    title,
+                    rating_key,
+                    plex_username,
+                    watched_at,
+                )
+        except Exception as exc:
+            stats["failed"] += 1
+            logger.warning(
+                "Failed to check watch status for %s (%s) for user %s: %s",
+                title,
+                rating_key,
+                plex_username,
+                exc,
+            )
+
+    logger.info(
+        "Watch status check complete: checked=%d, watched=%d, failed=%d",
+        stats["checked"],
+        stats["watched"],
+        stats["failed"],
+    )
+    return stats
 
 
 def refresh_metadata_for_recent_unknowns(limit: int = 10, pool_size: int = 50) -> dict[str | int, str]:
@@ -750,7 +832,8 @@ def _attempt_send_request(
                 'poster_url': poster_url,
                 'mediaType': media_type,
                 'media_added_at': media_raw or record.get('createdAt'),
-                'email_sent_at': sent_at.isoformat()
+                'email_sent_at': sent_at.isoformat(),
+                'date_watched': None
             },
             (Email.email == email_value) & (Email.tmdbId == str(tmdb_id))
         )
@@ -877,7 +960,13 @@ def main():
         logger.info("Aborting run due to Tautulli connectivity issues.")
         return
 
-    logger.info("Step 1: Grab requests from Overseerr")
+    logger.info("Step 1: Check watch status for unwatched sent emails")
+    try:
+        check_unwatched_emails_status()
+    except Exception as exc:
+        logger.exception("Watch status check failed: %s", exc)
+
+    logger.info("Step 2: Grab requests from Overseerr")
     # Step 1: Fetch new Overseerr requests and add them to the database if not already present
     overseerr_requests = get_overseerr_requests()
     debug_emails_sent = 0
@@ -943,11 +1032,11 @@ def main():
         if existing_email:
             _ensure_email_user_record(existing_email)
 
-    # Step 2: Refresh metadata for recent unknown titles
-    logger.info("Step 2: Update 10 recent titles from Tautulli")
+    # Step 3: Refresh metadata for recent unknown titles
+    logger.info("Step 3: Update 10 recent titles from Tautulli")
     metadata_updates = refresh_metadata_for_recent_unknowns(limit=10, pool_size=50)
 
-    # Step 3: Evaluate reminders per user
+    # Step 4: Evaluate reminders per user
     threshold_dt = datetime.now() - timedelta(days=DAYS_SINCE_REQUEST)
     overdue_by_email: dict[str, list[tuple[datetime, dict]]] = {}
     for rec in request_db.all():

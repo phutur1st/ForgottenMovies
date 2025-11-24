@@ -18,6 +18,7 @@ from flask import (
 
 from forgotten_movies import (
     add_unsubscribed_email,
+    check_unwatched_emails_status,
     flush_log_handlers,
     get_email_user,
     get_log_level,
@@ -356,3 +357,16 @@ def settings():
         messages=get_flashed_messages(with_categories=True),
         current_year=time.strftime("%Y"),
     )
+
+
+@app.route("/settings/update-watch-status", methods=["POST"])
+def update_watch_status():
+    APP_LOGGER.info("Manual action: update watch status requested")
+    try:
+        stats = check_unwatched_emails_status()
+        msg = f"Watch status check complete: {stats['checked']} checked, {stats['watched']} watched, {stats['failed']} failed."
+        flash(msg, "success")
+    except Exception as exc:
+        APP_LOGGER.exception("Watch status check failed: %s", exc)
+        flash(f"Watch status check failed: {exc}", "error")
+    return redirect(url_for("settings"))

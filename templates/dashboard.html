@@ -86,6 +86,159 @@
         font-weight: 600;
         color: #c5cae9;
     }
+    .table-search {
+        padding: 0.4rem 0.6rem;
+        border: 1px solid #555;
+        border-radius: 4px;
+        background: #2a2a2a;
+        color: #e0e0e0;
+        font-size: 0.9rem;
+        min-width: 200px;
+    }
+    .table-search:focus {
+        outline: 2px solid #7986cb;
+        outline-offset: 1px;
+        border-color: #7986cb;
+    }
+    .table-search::placeholder {
+        color: #888;
+    }
+    .filter-dropdown {
+        position: relative;
+        display: inline-block;
+    }
+    .filter-trigger {
+        background: none;
+        border: none;
+        color: #c5cae9;
+        cursor: pointer;
+        padding: 0.2rem 0.4rem;
+        margin-left: 0.3rem;
+        border-radius: 3px;
+        font-size: 0.85rem;
+    }
+    .filter-trigger:hover {
+        background: rgba(121, 134, 203, 0.2);
+    }
+    .filter-trigger.active {
+        color: #ffcc80;
+        background: rgba(255, 204, 128, 0.15);
+    }
+    .filter-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        background: #2a2a2a;
+        border: 1px solid #555;
+        border-radius: 6px;
+        min-width: 220px;
+        max-width: 400px;
+        max-height: 350px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+        padding: 0.5rem;
+        display: none;
+        z-index: 1000;
+        margin-top: 0.25rem;
+    }
+    @media (max-width: 768px) {
+        .filter-menu {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 90vw;
+            max-height: 70vh;
+        }
+    }
+    .filter-dropdown.open .filter-menu {
+        display: block;
+    }
+    .filter-menu-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.5rem;
+        border-bottom: 1px solid #444;
+    }
+    .filter-menu-header button {
+        background: none;
+        border: none;
+        color: #7986cb;
+        cursor: pointer;
+        font-size: 0.85rem;
+        padding: 0.2rem 0.4rem;
+    }
+    .filter-menu-header button:hover {
+        color: #ffcc80;
+        text-decoration: underline;
+    }
+    .filter-option {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.5rem;
+        cursor: pointer;
+        user-select: none;
+        border-radius: 4px;
+        transition: background 0.15s ease;
+    }
+    .filter-option:hover {
+        background: rgba(121, 134, 203, 0.2);
+    }
+    .filter-option input[type="checkbox"] {
+        cursor: pointer;
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
+    }
+    .filter-option label {
+        cursor: pointer;
+        flex: 1;
+        font-size: 0.9rem;
+        color: #e0e0e0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        word-break: break-word;
+        line-height: 1.4;
+    }
+    th.sortable {
+        white-space: nowrap;
+    }
+    .filter-backdrop {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+    }
+    .filter-backdrop.active {
+        display: block;
+    }
+    @media (max-width: 768px) {
+        .filter-dropdown.open .filter-menu {
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+        }
+    }
+    .filter-menu::-webkit-scrollbar {
+        width: 8px;
+    }
+    .filter-menu::-webkit-scrollbar-track {
+        background: #1a1a1a;
+        border-radius: 4px;
+    }
+    .filter-menu::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 4px;
+    }
+    .filter-menu::-webkit-scrollbar-thumb:hover {
+        background: #666;
+    }
     .sr-only {
         position: absolute;
         width: 1px;
@@ -132,7 +285,10 @@
     {% endif %}
     {% if todo_items %}
     <div class="table-controls" data-table="todo-table">
-        <div class="table-meta">{{ todo_items|length }} total</div>
+        <div class="table-meta"><span class="filtered-count">{{ todo_items|length }}</span> / {{ todo_items|length }} total</div>
+        <label>
+            <input type="text" class="table-search" data-table="todo-table" placeholder="Search...">
+        </label>
         <label>Rows per page:
             <select class="page-size" data-table="todo-table">
                 <option value="5">5</option>
@@ -194,7 +350,7 @@
     {% endif %}
 </div>
 <div class="card">
-    <h2>Recently Sent Emails</h2>
+    <h2>Sent Emails</h2>
     {% if recent_messages %}
     <div class="local-flashes">
         {% for category, text in recent_messages %}
@@ -207,7 +363,10 @@
     {% endif %}
     {% if recent_emails %}
     <div class="table-controls" data-table="recent-table">
-        <div class="table-meta">{{ recent_emails|length }} total</div>
+        <div class="table-meta"><span class="filtered-count">{{ recent_emails|length }}</span> / {{ recent_emails|length }} total</div>
+        <label>
+            <input type="text" class="table-search" data-table="recent-table" placeholder="Search...">
+        </label>
         <label>Rows per page:
             <select class="page-size" data-table="recent-table">
                 <option value="5">5</option>
@@ -234,6 +393,7 @@
                     <th class="sortable" data-sort-type="text">Email</th>
                     <th class="sortable" data-sort-type="date">Media Added</th>
                     <th class="sortable" data-sort-type="date">Sent At</th>
+                    <th class="sortable" data-sort-type="date">Date Watched</th>
                 </tr>
             </thead>
             <tbody>
@@ -245,6 +405,7 @@
                     <td>{{ item.email }}</td>
                     <td data-sort-value="{{ item.media_added_sort }}">{{ item.media_added_display }}</td>
                     <td data-sort-value="{{ item.email_sent_at_sort }}">{{ item.email_sent_at_display }}</td>
+                    <td data-sort-value="{{ item.date_watched_sort }}">{{ item.date_watched_display }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -271,7 +432,10 @@
         <button type="submit">Unsubscribe</button>
     </form>
 <div class="table-controls" data-table="unsubscribe-table" {% if not unsubscribe_records %}style="display:none;"{% endif %}>
-    <div class="table-meta"><span id="unsubscribe-count">{{ unsubscribe_records|length }}</span> total</div>
+    <div class="table-meta"><span class="filtered-count">{{ unsubscribe_records|length }}</span> / <span id="unsubscribe-count">{{ unsubscribe_records|length }}</span> total</div>
+    <label>
+        <input type="text" class="table-search" data-table="unsubscribe-table" placeholder="Search...">
+    </label>
     <label>Rows per page:
         <select class="page-size" data-table="unsubscribe-table">
             <option value="5">5</option>
@@ -563,12 +727,16 @@
         }
         const tbody = table.tBodies[0];
         let rows = Array.from(tbody.querySelectorAll("tr"));
+        let allRows = rows;
+        let filteredRows = rows;
 
         const pager = document.querySelector(`.pager[data-table="${tableId}"]`);
         const pageInfo = pager ? pager.querySelector('.page-info') : null;
         const prevBtn = pager ? pager.querySelector('.prev') : null;
         const nextBtn = pager ? pager.querySelector('.next') : null;
         const sizeSelect = document.querySelector(`.page-size[data-table="${tableId}"]`);
+        const searchInput = document.querySelector(`.table-search[data-table="${tableId}"]`);
+        const filteredCount = document.querySelector(`.table-controls[data-table="${tableId}"] .filtered-count`);
         const headers = Array.from(table.querySelectorAll('thead th.sortable'));
         const sortState = { index: -1, direction: 'asc' };
 
@@ -579,6 +747,7 @@
         if (rows.length === 0) {
             sizeSelect.style.display = 'none';
             if (pager) { pager.style.display = 'none'; }
+            if (searchInput) { searchInput.style.display = 'none'; }
             return;
         }
 
@@ -587,8 +756,11 @@
 
         let pageSize = resolvePageSize(defaultValue);
         let currentPage = 1;
+        let columnFilters = {};
 
         initSorting();
+        initSearch();
+        initColumnFilters();
         render();
 
         sizeSelect.addEventListener('change', (event) => {
@@ -620,12 +792,284 @@
             return value === 'all' ? Infinity : parseInt(value, 10);
         }
 
+        function applyFilters() {
+            let filtered = allRows;
+
+            // Apply search filter
+            if (searchInput && searchInput.value.trim()) {
+                const query = searchInput.value.toLowerCase().trim();
+                filtered = filtered.filter((row) => {
+                    const text = row.textContent.toLowerCase();
+                    return text.includes(query);
+                });
+            }
+
+            // Apply column filters
+            Object.keys(columnFilters).forEach((colIndex) => {
+                const activeValues = columnFilters[colIndex];
+                if (activeValues && activeValues.size > 0) {
+                    filtered = filtered.filter((row) => {
+                        const cell = row.cells[colIndex];
+                        if (!cell) return false;
+                        const value = (cell.textContent || '').trim();
+                        return activeValues.has(value);
+                    });
+                }
+            });
+
+            filteredRows = filtered;
+            rows = filtered;
+            currentPage = 1;
+            if (filteredCount) {
+                filteredCount.textContent = filtered.length;
+            }
+            render();
+        }
+
+        function initSearch() {
+            if (!searchInput) {
+                return;
+            }
+            searchInput.addEventListener('input', () => {
+                applyFilters();
+            });
+        }
+
+        function initColumnFilters() {
+            // Create backdrop element for mobile
+            let backdrop = document.getElementById('filter-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.id = 'filter-backdrop';
+                backdrop.className = 'filter-backdrop';
+                document.body.appendChild(backdrop);
+
+                backdrop.addEventListener('click', () => {
+                    document.querySelectorAll('.filter-dropdown.open').forEach((d) => {
+                        d.classList.remove('open');
+                    });
+                    backdrop.classList.remove('active');
+                });
+            }
+
+            headers.forEach((header, columnIndex) => {
+                // Skip action columns
+                if (header.classList.contains('actions-col') || header.textContent.trim() === 'Actions') {
+                    return;
+                }
+
+                const filterDropdown = document.createElement('div');
+                filterDropdown.className = 'filter-dropdown';
+
+                const filterTrigger = document.createElement('button');
+                filterTrigger.className = 'filter-trigger';
+                filterTrigger.innerHTML = '&#9662;';
+                filterTrigger.type = 'button';
+                filterTrigger.title = 'Filter';
+
+                const filterMenu = document.createElement('div');
+                filterMenu.className = 'filter-menu';
+
+                const menuHeader = document.createElement('div');
+                menuHeader.className = 'filter-menu-header';
+
+                const selectAllBtn = document.createElement('button');
+                selectAllBtn.textContent = 'All';
+                selectAllBtn.type = 'button';
+
+                const clearBtn = document.createElement('button');
+                clearBtn.textContent = 'Clear';
+                clearBtn.type = 'button';
+
+                menuHeader.appendChild(selectAllBtn);
+                menuHeader.appendChild(clearBtn);
+                filterMenu.appendChild(menuHeader);
+
+                const optionsContainer = document.createElement('div');
+                filterMenu.appendChild(optionsContainer);
+
+                filterDropdown.appendChild(filterTrigger);
+                filterDropdown.appendChild(filterMenu);
+                header.appendChild(filterDropdown);
+
+                // Build unique values for this column
+                function rebuildFilterOptions() {
+                    const uniqueValues = new Set();
+                    allRows.forEach((row) => {
+                        const cell = row.cells[columnIndex];
+                        if (cell) {
+                            const value = (cell.textContent || '').trim();
+                            if (value) uniqueValues.add(value);
+                        }
+                    });
+
+                    const sortedValues = Array.from(uniqueValues).sort();
+                    optionsContainer.innerHTML = '';
+
+                    sortedValues.forEach((value) => {
+                        const option = document.createElement('div');
+                        option.className = 'filter-option';
+
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        const activeFilter = columnFilters[columnIndex];
+                        checkbox.checked = !activeFilter || activeFilter.has(value);
+                        checkbox.id = `filter-${tableId}-${columnIndex}-${value.replace(/[\s\.@\-]/g, '_')}`;
+
+                        const label = document.createElement('label');
+                        label.htmlFor = checkbox.id;
+                        label.textContent = value;
+                        label.title = value; // Add tooltip for long text
+
+                        option.appendChild(checkbox);
+                        option.appendChild(label);
+                        optionsContainer.appendChild(option);
+
+                        // Make the entire row clickable
+                        option.addEventListener('click', (e) => {
+                            // Prevent double-toggle when clicking checkbox directly
+                            if (e.target === checkbox) {
+                                return;
+                            }
+                            e.preventDefault();
+                            checkbox.checked = !checkbox.checked;
+                            updateColumnFilter(columnIndex);
+                        });
+
+                        // Handle checkbox change separately
+                        checkbox.addEventListener('change', () => {
+                            updateColumnFilter(columnIndex);
+                        });
+                    });
+                }
+
+                function updateColumnFilter(colIndex) {
+                    const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]');
+                    const checkedValues = new Set();
+                    let allChecked = true;
+
+                    checkboxes.forEach((cb) => {
+                        if (cb.checked) {
+                            const label = cb.nextElementSibling;
+                            checkedValues.add(label.textContent);
+                        } else {
+                            allChecked = false;
+                        }
+                    });
+
+                    if (allChecked || checkedValues.size === 0) {
+                        delete columnFilters[colIndex];
+                        filterTrigger.classList.remove('active');
+                    } else {
+                        columnFilters[colIndex] = checkedValues;
+                        filterTrigger.classList.add('active');
+                    }
+
+                    applyFilters();
+                }
+
+                filterTrigger.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const wasOpen = filterDropdown.classList.contains('open');
+
+                    // Close all other filter dropdowns
+                    document.querySelectorAll('.filter-dropdown.open').forEach((d) => {
+                        d.classList.remove('open');
+                    });
+
+                    if (!wasOpen) {
+                        rebuildFilterOptions();
+                        filterDropdown.classList.add('open');
+                        backdrop.classList.add('active');
+
+                        // Position the dropdown dynamically
+                        // Wait for next tick to ensure menu is visible for measurements
+                        setTimeout(() => {
+                            // Only apply positioning on desktop (not mobile)
+                            if (window.innerWidth > 768) {
+                                // Reset any previous inline styles first
+                                filterMenu.style.position = '';
+                                filterMenu.style.left = '0';
+                                filterMenu.style.right = 'auto';
+                                filterMenu.style.top = '';
+                                filterMenu.style.maxWidth = '';
+
+                                // Force a reflow to get accurate measurements
+                                void filterMenu.offsetHeight;
+
+                                const triggerRect = filterTrigger.getBoundingClientRect();
+                                const viewportWidth = window.innerWidth;
+                                const viewportHeight = window.innerHeight;
+                                const padding = 16; // Buffer from viewport edges
+
+                                // Use fixed positioning and clamp within the viewport to avoid clipping
+                                const menuWidth = Math.min(filterMenu.offsetWidth, viewportWidth - (padding * 2));
+                                const clampedLeft = Math.min(
+                                    Math.max(padding, triggerRect.left),
+                                    viewportWidth - menuWidth - padding
+                                );
+                                const availableHeight = Math.max(120, viewportHeight - triggerRect.bottom - padding);
+
+                                filterMenu.style.position = 'fixed';
+                                filterMenu.style.maxWidth = `${menuWidth}px`;
+                                filterMenu.style.left = `${clampedLeft}px`;
+                                filterMenu.style.right = 'auto';
+                                filterMenu.style.top = `${triggerRect.bottom + 4}px`;
+                                filterMenu.style.maxHeight = `${Math.min(availableHeight, 400)}px`;
+                            } else {
+                                // On mobile, clear any inline styles to let media query take over
+                                filterMenu.style.position = '';
+                                filterMenu.style.left = '';
+                                filterMenu.style.right = '';
+                                filterMenu.style.top = '';
+                                filterMenu.style.maxWidth = '';
+                                filterMenu.style.maxHeight = '';
+                            }
+                        }, 0);
+                    } else {
+                        backdrop.classList.remove('active');
+                    }
+                });
+
+                selectAllBtn.addEventListener('click', () => {
+                    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                        cb.checked = true;
+                    });
+                    updateColumnFilter(columnIndex);
+                });
+
+                clearBtn.addEventListener('click', () => {
+                    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+                        cb.checked = false;
+                    });
+                    updateColumnFilter(columnIndex);
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!filterDropdown.contains(e.target)) {
+                        const wasOpen = filterDropdown.classList.contains('open');
+                        filterDropdown.classList.remove('open');
+                        if (wasOpen) {
+                            // Check if any dropdowns are still open
+                            const anyOpen = document.querySelector('.filter-dropdown.open');
+                            if (!anyOpen) {
+                                backdrop.classList.remove('active');
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
         function render() {
             const totalRows = rows.length;
             if (totalRows === 0) {
                 if (pager) { pager.style.display = 'none'; }
                 sizeSelect.style.display = 'none';
                 if (pageInfo) { pageInfo.textContent = ''; }
+                allRows.forEach((row) => {
+                    row.style.display = 'none';
+                });
                 return;
             }
             sizeSelect.style.display = '';
@@ -635,6 +1079,10 @@
             }
             const startIndex = pageSize === Infinity ? 0 : (currentPage - 1) * pageSize;
             const endIndex = pageSize === Infinity ? totalRows : startIndex + pageSize;
+
+            allRows.forEach((row) => {
+                row.style.display = 'none';
+            });
 
             rows.forEach((row, index) => {
                 row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
@@ -676,10 +1124,11 @@
 
             updateHeaderStates(columnIndex, nextDirection);
 
-            rows.sort((a, b) => compareRows(a, b, columnIndex, sortType, nextDirection));
-            rows.forEach((row) => tbody.appendChild(row));
-            currentPage = 1;
-            render();
+            allRows.sort((a, b) => compareRows(a, b, columnIndex, sortType, nextDirection));
+            allRows.forEach((row) => tbody.appendChild(row));
+
+            // Re-apply all filters after sorting
+            applyFilters();
         }
 
         function updateHeaderStates(activeIndex, direction) {
@@ -741,8 +1190,9 @@
         }
         table._fm = {
             refresh() {
-                rows = Array.from(tbody.querySelectorAll("tr"));
-                render();
+                allRows = Array.from(tbody.querySelectorAll("tr"));
+                // Re-apply all filters
+                applyFilters();
             }
         };
     }
