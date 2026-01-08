@@ -34,6 +34,9 @@ from forgotten_movies import (
     set_log_level,
     _attempt_send_request,
     DEBUG_MODE,
+    UNSUBSCRIBE_ENABLED,
+    verify_unsubscribe_token,
+    build_resubscribe_url,
 )
 from filelock import Timeout
 
@@ -269,6 +272,114 @@ def remove_email():
             return jsonify({"success": False, "message": message, "email": email})
         flash(message, "unsubscribe-info")
     return redirect(url_for("index"))
+
+
+@app.route("/unsubscribe/<token>/<email>", methods=["GET"])
+def unsubscribe_via_link(token: str, email: str):
+    """One-click unsubscribe via HMAC-signed link."""
+    if not UNSUBSCRIBE_ENABLED:
+        APP_LOGGER.warning("Unsubscribe endpoint accessed but feature is disabled")
+        return render_template(
+            "unsubscribe_result.html",
+            page_title="Feature Disabled",
+            success=False,
+            email=None,
+            message="Self-service unsubscribe is not enabled. Please contact the administrator.",
+            current_year=time.strftime("%Y"),
+        ), 404
+
+    from urllib.parse import unquote
+
+    decoded_email = unquote(email).lower().strip()
+
+    # Verify HMAC signature
+    if not verify_unsubscribe_token(decoded_email, token):
+        APP_LOGGER.warning("Invalid unsubscribe token for %s", decoded_email)
+        return render_template(
+            "unsubscribe_result.html",
+            page_title="Unsubscribe Failed",
+            success=False,
+            email=decoded_email,
+            message="Invalid or expired unsubscribe link. Please contact support.",
+            current_year=time.strftime("%Y"),
+        ), 400
+
+    # Perform unsubscribe
+    add_unsubscribed_email(decoded_email)
+    APP_LOGGER.info("Email unsubscribed via link: %s", decoded_email)
+
+    # Generate resubscribe URL
+    try:
+        resubscribe_url = build_resubscribe_url(decoded_email)
+    except Exception as exc:
+        APP_LOGGER.warning("Failed to generate resubscribe URL: %s", exc)
+        resubscribe_url = None
+
+    return render_template(
+        "unsubscribe_result.html",
+        page_title="Unsubscribed Successfully",
+        success=True,
+        email=decoded_email,
+        message="You have been unsubscribed from Forgotten Movies reminders.",
+        resubscribe_url=resubscribe_url,
+        current_year=time.strftime("%Y"),
+    )
+
+
+@app.route("/resubscribe/<token>/<email>", methods=["GET"])
+def resubscribe_via_link(token: str, email: str):
+    """One-click resubscribe via HMAC-signed link."""
+    if not UNSUBSCRIBE_ENABLED:
+        APP_LOGGER.warning("Resubscribe endpoint accessed but feature is disabled")
+        return render_template(
+            "resubscribe_result.html",
+            page_title="Feature Disabled",
+            success=False,
+            email=None,
+            message="Self-service unsubscribe is not enabled. Please contact the administrator.",
+            current_year=time.strftime("%Y"),
+        ), 404
+
+    from urllib.parse import unquote
+
+    decoded_email = unquote(email).lower().strip()
+
+    # Verify HMAC signature
+    if not verify_unsubscribe_token(decoded_email, token):
+        APP_LOGGER.warning("Invalid resubscribe token for %s", decoded_email)
+        return render_template(
+            "resubscribe_result.html",
+            page_title="Resubscribe Failed",
+            success=False,
+            email=decoded_email,
+            message="Invalid or expired resubscribe link. Please contact support.",
+            current_year=time.strftime("%Y"),
+        ), 400
+
+    # Perform resubscribe
+    was_unsubscribed = remove_unsubscribed_email(decoded_email)
+
+    if not was_unsubscribed:
+        APP_LOGGER.info("Resubscribe attempted for non-unsubscribed email: %s", decoded_email)
+        return render_template(
+            "resubscribe_result.html",
+            page_title="Already Subscribed",
+            success=True,
+            email=decoded_email,
+            message="You are already subscribed to Forgotten Movies reminders.",
+            current_year=time.strftime("%Y"),
+        )
+
+    APP_LOGGER.info("Email resubscribed via link: %s", decoded_email)
+
+    return render_template(
+        "resubscribe_result.html",
+        page_title="Resubscribed Successfully",
+        success=True,
+        email=decoded_email,
+        message="You have been resubscribed to Forgotten Movies reminders.",
+        current_year=time.strftime("%Y"),
+    )
 
 
 @app.route("/run-now", methods=["POST"])

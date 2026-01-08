@@ -14,6 +14,9 @@ import os
 import shutil
 from jinja2 import Template, TemplateError
 from typing import NamedTuple
+import hmac
+import hashlib
+from urllib.parse import quote, unquote
 
 TAUTULLI_API_KEY = os.getenv("TAUTULLI_API_KEY")
 TAUTULLI_URL = os.getenv("TAUTULLI_URL")
@@ -44,6 +47,11 @@ HOURS_BETWEEN_EMAILS_EMAIL_TEXT = os.getenv("HOURS_BETWEEN_EMAILS_EMAIL_TEXT", f
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 DEBUG_EMAIL = os.getenv("DEBUG_EMAIL")
 DEBUG_MAX_EMAILS = int(os.getenv("DEBUG_MAX_EMAILS", 2))
+
+# Optional self-service unsubscribe feature
+UNSUBSCRIBE_SECRET_KEY = os.getenv("UNSUBSCRIBE_SECRET_KEY")
+BASE_URL = os.getenv("BASE_URL", "").rstrip("/") if os.getenv("BASE_URL") else None
+UNSUBSCRIBE_ENABLED = bool(UNSUBSCRIBE_SECRET_KEY and BASE_URL)
 
 
 REQUIRED_ENV = {
@@ -87,6 +95,12 @@ if not any(getattr(handler, "_fm_log_file", False) for handler in root_logger.ha
 
 for handler in root_logger.handlers:
     handler.setLevel(LOG_LEVEL)
+
+# Log self-service unsubscribe feature status
+if UNSUBSCRIBE_ENABLED:
+    logger.info("Self-service unsubscribe feature is ENABLED")
+else:
+    logger.info("Self-service unsubscribe feature is DISABLED (set UNSUBSCRIBE_SECRET_KEY and BASE_URL to enable)")
 
 BASE_DIR = os.path.dirname(__file__)
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
@@ -161,8 +175,16 @@ def build_email_body(
     plex_url: str | None,
     poster_url: str | None,
     mobile_url: str | None,
+    email_address: str,
 ) -> str:
     template = load_email_template()
+
+    # Generate unsubscribe URL
+    try:
+        unsubscribe_url = build_unsubscribe_url(email_address)
+    except Exception as exc:
+        logger.warning("Failed to generate unsubscribe URL for %s: %s", email_address, exc)
+        unsubscribe_url = ""
 
     context = SafeDict(
         plex_username=plex_username,
@@ -174,6 +196,7 @@ def build_email_body(
         mobile_url=mobile_url or "",
         request_url=REQUEST_URL or "",
         admin_name=ADMIN_NAME or "",
+        unsubscribe_url=unsubscribe_url,
     )
 
     try:
@@ -228,6 +251,51 @@ EMAIL_USER_LOCK = RLock()
 
 def _stable_doc_id(email: str) -> int:
     return (abs(hash(email)) % 2_147_000_000) + 1
+
+
+def generate_unsubscribe_token(email: str) -> str:
+    """Generate HMAC-SHA256 signature for email address."""
+    if not UNSUBSCRIBE_ENABLED:
+        raise RuntimeError("Self-service unsubscribe feature is not enabled")
+    normalized = email.lower().strip()
+    signature = hmac.new(
+        UNSUBSCRIBE_SECRET_KEY.encode('utf-8'),
+        normalized.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    return signature
+
+
+def verify_unsubscribe_token(email: str, token: str) -> bool:
+    """Verify HMAC signature for email address."""
+    if not UNSUBSCRIBE_ENABLED:
+        return False
+    try:
+        expected = generate_unsubscribe_token(email)
+        return hmac.compare_digest(expected, token)
+    except Exception:
+        return False
+
+
+def build_unsubscribe_url(email: str) -> str:
+    """Build complete unsubscribe URL with signature."""
+    if not UNSUBSCRIBE_ENABLED:
+        raise RuntimeError("Self-service unsubscribe feature is not enabled")
+    normalized = email.lower().strip()
+    token = generate_unsubscribe_token(normalized)
+    encoded_email = quote(normalized)
+    return f"{BASE_URL}/unsubscribe/{token}/{encoded_email}"
+
+
+def build_resubscribe_url(email: str) -> str:
+    """Build complete resubscribe URL with signature."""
+    if not UNSUBSCRIBE_ENABLED:
+        raise RuntimeError("Self-service unsubscribe feature is not enabled")
+    normalized = email.lower().strip()
+    token = generate_unsubscribe_token(normalized)
+    encoded_email = quote(normalized)
+    return f"{BASE_URL}/resubscribe/{token}/{encoded_email}"
+
 
 SCHEDULER_DISABLED_KEY = "scheduler_disabled"
 DEFAULT_SCHEDULER_DISABLED = os.getenv("DISABLE_SCHEDULER", "false").lower() == "true"
@@ -818,6 +886,7 @@ def _attempt_send_request(
         plex_url=plex_url,
         poster_url=poster_url,
         mobile_url=mobile_url,
+        email_address=email_value,
     )
 
     if DEBUG_MODE:
