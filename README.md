@@ -8,6 +8,7 @@ Forgotten Movies keeps Plex requests from gathering dust. It watches Overseerr f
 - **Automated reminders:** Periodically scan Overseerr, cross-reference Tautulli history, and sends emails via SMTP to the original requester.
 - **Custom email template:** Default ships to `/app/data/email_template_original.html`; add `/app/data/email_template.html` to override while still receiving upstream updates.
 - **Dashboard:** Kick off manual runs, review the upcoming reminder queue, see recently sent reminders, and manage unsubscribed addresses.
+- **Self-service unsubscribe (optional):** Let users unsubscribe themselves via HMAC-signed links in emails instead of managing the list manually. Works with any reverse proxy setup.
 - **Scheduler toggle:** Temporarily pause automated API calls and emails from the settings page.
 - **Docker ready:** Single-container deployment with persistent TinyDB data, logs, and template files.
 
@@ -61,6 +62,8 @@ Forgotten Movies keeps Plex requests from gathering dust. It watches Overseerr f
 | `DEBUG_EMAIL`, `DEBUG_MAX_EMAILS` | Override receiving address and cap while in debug mode (default max = 2). |
 | `FLASK_SECRET_KEY` | Session/flash signing key for the Flask UI. |
 | `EMAIL_TEMPLATE_PATH` | Optional custom override path for the HTML template (defaults to `/app/data/email_template.html`). |
+| `UNSUBSCRIBE_SECRET_KEY` | Optional: 256-bit secret for HMAC-signed unsubscribe links. Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. Leave unset to disable self-service unsubscribe. |
+| `BASE_URL` | Optional: Public URL where your instance is accessible (e.g. `https://forgotten.example.com`). Required only when `UNSUBSCRIBE_SECRET_KEY` is set. |
 | `JOB_LOCK_TIMEOUT` | Seconds to wait when acquiring the inter-process job lock (default `0.1`). |
 | `ROOT`, `PUID`, `PGID`, `TZ` | Docker-only: bind mount root, container UID/GID, timezone. |
 
@@ -191,10 +194,70 @@ Helpful context variables available inside the template:
 | `poster_url` | Poster artwork URL (if available). |
 | `request_url` | Link back to your request portal (may be empty). |
 | `admin_name` | Value of `ADMIN_NAME`. |
+| `unsubscribe_url` | HMAC-signed unsubscribe link (empty when feature disabled). |
 
 For example: The {{ media_type }} <strong>{{ title }}</strong> that you requested was added about {{ time_since_text }} ago but you haven't watched it yet.
-            Want to give it a watch?. 
+            Want to give it a watch?.
             Because the template uses Jinja, you can wrap sections in `{% if plex_url %}...{% endif %}` to hide buttons or images when data is missing.
+
+
+# Self-Service Unsubscribe (Optional)
+
+When enabled, reminder emails include an unsubscribe link that lets users manage their subscription without admin intervention. The feature uses HMAC-SHA256 signatures so links can't be forged or reused for other email addresses.
+
+## Enabling the Feature
+
+1. **Generate a secret key:**
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+
+2. **Set both environment variables:**
+   ```yaml
+   UNSUBSCRIBE_SECRET_KEY: "your-64-character-hex-key"
+   BASE_URL: "https://forgotten.example.com"
+   ```
+
+3. **Restart the container.** Check startup logs for confirmation:
+   ```
+   Self-service unsubscribe feature is ENABLED
+   ```
+
+When disabled (default), emails send without unsubscribe links and the endpoints return 404.
+
+## Reverse Proxy Configuration
+
+The unsubscribe/resubscribe endpoints (`/unsubscribe/<token>/<email>` and `/resubscribe/<token>/<email>`) should be publicly accessible, but you probably want to hide the admin dashboard from the internet.
+
+**Example nginx configuration** (Swag/linuxserver):
+```nginx
+server {
+    listen 443 ssl;
+    server_name forgotten.*;
+
+    # Public endpoints - no auth required
+    location ~ ^/(unsubscribe|resubscribe)/[^/]+/[^/]+$ {
+        include /config/nginx/proxy.conf;
+        proxy_pass http://container-ip:8741;
+    }
+
+    # Everything else returns 404 (hides admin interface)
+    location / {
+        return 404;
+    }
+}
+```
+
+Access the admin dashboard via direct IP on your local network: `http://container-ip:8741`
+
+## Security Notes
+
+- **HMAC signatures are email-specific:** Each user gets a unique token that only works for their email address.
+- **Tokens don't expire:** They're deterministic—same email always produces the same token. This is safe because emails don't change.
+- **One-click from mail clients:** Emails include RFC 2369 `List-Unsubscribe` headers so Gmail, Outlook, and Apple Mail show native unsubscribe buttons.
+- **Audit trail:** All unsubscribe/resubscribe actions are logged with the email address.
+
+> **Tip:** Keep `UNSUBSCRIBE_SECRET_KEY` backed up with your other secrets. If you lose it, all existing unsubscribe links stop working (but the database is unaffected).
 
 
 # UI Tour

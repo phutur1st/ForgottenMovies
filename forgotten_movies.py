@@ -1002,7 +1002,9 @@ def send_email(to_address, subject, body, is_html=False, unsubscribe_url=None):
 
     # Add RFC 2369 List-Unsubscribe headers for better email client integration
     if unsubscribe_url:
-        msg['List-Unsubscribe'] = f'<{unsubscribe_url}>'
+        # Include both HTTPS and mailto options for maximum email client compatibility
+        mailto_unsub = f'mailto:{from_address}?subject=Unsubscribe%20Request'
+        msg['List-Unsubscribe'] = f'<{unsubscribe_url}>, <{mailto_unsub}>'
         msg['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
 
     if DEBUG_MODE:
