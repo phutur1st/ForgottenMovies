@@ -176,7 +176,8 @@ def build_email_body(
     poster_url: str | None,
     mobile_url: str | None,
     email_address: str,
-) -> str:
+) -> tuple[str, str]:
+    """Build email body and return (body, unsubscribe_url) tuple."""
     template = load_email_template()
 
     # Generate unsubscribe URL
@@ -200,7 +201,8 @@ def build_email_body(
     )
 
     try:
-        return template.render(**context)
+        body = template.render(**context)
+        return body, unsubscribe_url
     except TemplateError as exc:
         raise RuntimeError(f"Email template formatting failed: {exc}") from exc
     except Exception as exc:
@@ -879,7 +881,7 @@ def _attempt_send_request(
                 return SendOutcome(False, False, "Reminder recently sent; cooldown in effect.", title, None, None)
 
     email_subject = f"Plex Reminder: {title} is available and unwatched"
-    email_body = build_email_body(
+    email_body, unsubscribe_url = build_email_body(
         plex_username=plex_username,
         media_type=media_type,
         title=title,
@@ -899,7 +901,7 @@ def _attempt_send_request(
             media_type,
         )
     try:
-        recipient = send_email(email_value, email_subject, email_body, is_html=True)
+        recipient = send_email(email_value, email_subject, email_body, is_html=True, unsubscribe_url=unsubscribe_url)
     except Exception:
         logger.exception(
             "Email send failed for %s (%s) [request %s, rating_key=%s].",
@@ -966,7 +968,7 @@ def transform_plex_url(plex_url):
     
     
 # Send email notification
-def send_email(to_address, subject, body, is_html=False):
+def send_email(to_address, subject, body, is_html=False, unsubscribe_url=None):
     if DEBUG_MODE:
         logger.debug(
             "send_email invoked for %s (subject=%s, html=%s).",
@@ -997,6 +999,11 @@ def send_email(to_address, subject, body, is_html=False):
     else:
         msg['To'] = actual_recipient
         msg['Bcc'] = BCC_EMAIL_ADDRESS
+
+    # Add RFC 2369 List-Unsubscribe headers for better email client integration
+    if unsubscribe_url:
+        msg['List-Unsubscribe'] = f'<{unsubscribe_url}>'
+        msg['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
 
     if DEBUG_MODE:
         logger.debug(
