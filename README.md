@@ -44,8 +44,8 @@ Forgotten Movies keeps Plex requests from gathering dust. It watches Overseerr f
 | `THEMOVIEDB_API_KEY` | Fetches poster artwork for reminder emails. Leave unset to skip artwork (emails still send). |
 | `SMTP_SERVER`, `SMTP_PORT` | SMTP host/port for STARTTLS email delivery (port defaults to 587). |
 | `SMTP_ENCRYPTION` | One of `STARTTLS` (default), `SSL`, or `NONE`. If unset and `SMTP_PORT=465`, the app automatically picks `SSL`. |
-| `SMTP_USERNAME` | Optional SMTP auth username when it differs from `FROM_EMAIL_ADDRESS`. |
-| `FROM_EMAIL_ADDRESS`, `FROM_NAME`, `EMAIL_PASSWORD` | Outbound email identity and password. |
+| `SMTP_USERNAME`, `EMAIL_PASSWORD` | Optional SMTP authentication credentials. Both must be set to enable authentication. Leave unset for no-auth SMTP relays. |
+| `FROM_EMAIL_ADDRESS`, `FROM_NAME` | Outbound email identity. FROM_EMAIL_ADDRESS is used for the From header and is recommended. |
 | `BCC_EMAIL_ADDRESS` | Optional address copied on reminders (you may also set it equal to `FROM_EMAIL_ADDRESS`). |
 | `ADMIN_NAME` | Shown in reminder copy so recipients know who to contact. |
 | `OVERSEERR_NUM_OF_HISTORY_RECORDS` | Number of Overseerr entries fetched per scan (default 10). |
@@ -66,6 +66,7 @@ Forgotten Movies keeps Plex requests from gathering dust. It watches Overseerr f
 
 > **Tip:** When credentials contain characters such as `!`, `$`, `&`, or `#`, wrap the value in quotes (or store them inside an `.env` file) so your shell/YAML parser doesn't truncate or reinterpret the password.
 > **Important:** The email template is mandatory. If neither `/app/data/email_template.html` nor `/app/data/email_template_original.html` can be read or formatted with the supplied placeholders, the job raises an error and no reminders are sent. This prevents accidents with blank messages.
+> **Note:** For local SMTP relays without authentication, simply omit `SMTP_USERNAME` and `EMAIL_PASSWORD`. The app will skip authentication and send directly.
 
 # INSTALLATION
 

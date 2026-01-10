@@ -912,7 +912,9 @@ def send_email(to_address, subject, body, is_html=False):
         msg = MIMEText(body)
 
     msg['Subject'] = subject
-    auth_user = (SMTP_USERNAME or "").strip() or FROM_EMAIL_ADDRESS
+    # SMTP authentication: only use if SMTP_USERNAME is explicitly set
+    auth_user = (SMTP_USERNAME or "").strip()
+    # From address: use FROM_EMAIL_ADDRESS, fallback to SMTP_USERNAME if not set
     from_address = (FROM_EMAIL_ADDRESS or "").strip() or auth_user or ""
     if FROM_NAME:
         msg['From'] = f"{FROM_NAME} <{from_address}>"
