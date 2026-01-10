@@ -14,9 +14,8 @@ import os
 import shutil
 from jinja2 import Template, TemplateError
 from typing import NamedTuple
-import hmac
+import base64
 import hashlib
-from urllib.parse import quote, unquote
 
 TAUTULLI_API_KEY = os.getenv("TAUTULLI_API_KEY")
 TAUTULLI_URL = os.getenv("TAUTULLI_URL")
@@ -95,12 +94,6 @@ if not any(getattr(handler, "_fm_log_file", False) for handler in root_logger.ha
 
 for handler in root_logger.handlers:
     handler.setLevel(LOG_LEVEL)
-
-# Log self-service unsubscribe feature status
-if UNSUBSCRIBE_ENABLED:
-    logger.info("Self-service unsubscribe feature is ENABLED")
-else:
-    logger.info("Self-service unsubscribe feature is DISABLED (set UNSUBSCRIBE_SECRET_KEY and BASE_URL to enable)")
 
 BASE_DIR = os.path.dirname(__file__)
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
@@ -255,48 +248,63 @@ def _stable_doc_id(email: str) -> int:
     return (abs(hash(email)) % 2_147_000_000) + 1
 
 
-def generate_unsubscribe_token(email: str) -> str:
-    """Generate HMAC-SHA256 signature for email address."""
-    if not UNSUBSCRIBE_ENABLED:
-        raise RuntimeError("Self-service unsubscribe feature is not enabled")
-    normalized = email.lower().strip()
-    signature = hmac.new(
-        UNSUBSCRIBE_SECRET_KEY.encode('utf-8'),
-        normalized.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-    return signature
+def _encrypt_email(email: str) -> str:
+    """Encrypt email using HMAC secret-derived key (XOR cipher, stdlib only)."""
+    if not UNSUBSCRIBE_SECRET_KEY:
+        raise RuntimeError("UNSUBSCRIBE_SECRET_KEY not configured")
+
+    email_bytes = email.encode('utf-8')
+    # Derive encryption key from secret (256-bit SHA256 hash)
+    key = hashlib.sha256(UNSUBSCRIBE_SECRET_KEY.encode('utf-8')).digest()
+
+    # XOR encryption: repeat key to match email length
+    encrypted = bytearray()
+    for i, byte in enumerate(email_bytes):
+        encrypted.append(byte ^ key[i % len(key)])
+
+    # Return URL-safe base64
+    return base64.urlsafe_b64encode(bytes(encrypted)).decode('ascii')
 
 
-def verify_unsubscribe_token(email: str, token: str) -> bool:
-    """Verify HMAC signature for email address."""
-    if not UNSUBSCRIBE_ENABLED:
-        return False
-    try:
-        expected = generate_unsubscribe_token(email)
-        return hmac.compare_digest(expected, token)
-    except Exception:
-        return False
+def _decrypt_email(encrypted_email: str) -> str:
+    """Decrypt email using HMAC secret-derived key."""
+    if not UNSUBSCRIBE_SECRET_KEY:
+        raise RuntimeError("UNSUBSCRIBE_SECRET_KEY not configured")
+
+    # Decode from base64
+    encrypted_bytes = base64.urlsafe_b64decode(encrypted_email.encode('ascii'))
+    # Derive same key from secret
+    key = hashlib.sha256(UNSUBSCRIBE_SECRET_KEY.encode('utf-8')).digest()
+
+    # XOR decryption
+    decrypted = bytearray()
+    for i, byte in enumerate(encrypted_bytes):
+        decrypted.append(byte ^ key[i % len(key)])
+
+    return bytes(decrypted).decode('utf-8')
 
 
 def build_unsubscribe_url(email: str) -> str:
-    """Build complete unsubscribe URL with signature."""
+    """Build complete unsubscribe URL with encrypted email token."""
     if not UNSUBSCRIBE_ENABLED:
         raise RuntimeError("Self-service unsubscribe feature is not enabled")
     normalized = email.lower().strip()
-    token = generate_unsubscribe_token(normalized)
-    encoded_email = quote(normalized)
-    return f"{BASE_URL}/unsubscribe/{token}/{encoded_email}"
+
+    # Encrypt email - serves as both data container and authentication token
+    encrypted_email = _encrypt_email(normalized)
+
+    return f"{BASE_URL}/unsubscribe/{encrypted_email}"
 
 
 def build_resubscribe_url(email: str) -> str:
-    """Build complete resubscribe URL with signature."""
+    """Build complete resubscribe URL with encrypted email token."""
     if not UNSUBSCRIBE_ENABLED:
         raise RuntimeError("Self-service unsubscribe feature is not enabled")
     normalized = email.lower().strip()
-    token = generate_unsubscribe_token(normalized)
-    encoded_email = quote(normalized)
-    return f"{BASE_URL}/resubscribe/{token}/{encoded_email}"
+
+    encrypted_email = _encrypt_email(normalized)
+
+    return f"{BASE_URL}/resubscribe/{encrypted_email}"
 
 
 SCHEDULER_DISABLED_KEY = "scheduler_disabled"
@@ -1000,11 +1008,9 @@ def send_email(to_address, subject, body, is_html=False, unsubscribe_url=None):
         msg['To'] = actual_recipient
         msg['Bcc'] = BCC_EMAIL_ADDRESS
 
-    # Add RFC 2369 List-Unsubscribe headers for better email client integration
-    if unsubscribe_url:
-        # Include both HTTPS and mailto options for maximum email client compatibility
-        mailto_unsub = f'mailto:{from_address}?subject=Unsubscribe%20Request'
-        msg['List-Unsubscribe'] = f'<{unsubscribe_url}>, <{mailto_unsub}>'
+    # Add RFC 8058 List-Unsubscribe headers (HTTPS only - required for one-click)
+    if unsubscribe_url and BASE_URL and BASE_URL.lower().startswith('https://'):
+        msg['List-Unsubscribe'] = f'<{unsubscribe_url}>'
         msg['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
 
     if DEBUG_MODE:

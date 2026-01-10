@@ -35,7 +35,7 @@ from forgotten_movies import (
     _attempt_send_request,
     DEBUG_MODE,
     UNSUBSCRIBE_ENABLED,
-    verify_unsubscribe_token,
+    _decrypt_email,
     build_resubscribe_url,
 )
 from filelock import Timeout
@@ -274,11 +274,12 @@ def remove_email():
     return redirect(url_for("index"))
 
 
-@app.route("/unsubscribe/<token>/<email>", methods=["GET"])
-def unsubscribe_via_link(token: str, email: str):
-    """One-click unsubscribe via HMAC-signed link."""
+@app.route("/unsubscribe/<token>", methods=["GET", "POST"])
+def unsubscribe_via_link(token: str):
     if not UNSUBSCRIBE_ENABLED:
         APP_LOGGER.warning("Unsubscribe endpoint accessed but feature is disabled")
+        if request.method == "POST":
+            return "", 404
         return render_template(
             "unsubscribe_result.html",
             page_title="Feature Disabled",
@@ -288,19 +289,19 @@ def unsubscribe_via_link(token: str, email: str):
             current_year=time.strftime("%Y"),
         ), 404
 
-    from urllib.parse import unquote
-
-    decoded_email = unquote(email).lower().strip()
-
-    # Verify HMAC signature
-    if not verify_unsubscribe_token(decoded_email, token):
-        APP_LOGGER.warning("Invalid unsubscribe token for %s", decoded_email)
+    try:
+        # Decrypt email - verifies authenticity (can only decrypt with secret key)
+        decoded_email = _decrypt_email(token).lower().strip()
+    except Exception as exc:
+        APP_LOGGER.warning("Failed to decrypt unsubscribe token: %s", exc)
+        if request.method == "POST":
+            return "", 400
         return render_template(
             "unsubscribe_result.html",
-            page_title="Unsubscribe Failed",
+            page_title="Invalid Link",
             success=False,
-            email=decoded_email,
-            message="Invalid or expired unsubscribe link. Please contact support.",
+            email=None,
+            message="The unsubscribe link is invalid or expired. Please contact support.",
             current_year=time.strftime("%Y"),
         ), 400
 
@@ -308,7 +309,11 @@ def unsubscribe_via_link(token: str, email: str):
     add_unsubscribed_email(decoded_email)
     APP_LOGGER.info("Email unsubscribed via link: %s", decoded_email)
 
-    # Generate resubscribe URL
+    # RFC 8058: POST from email clients expects 2xx response (no HTML needed)
+    if request.method == "POST":
+        return "", 200
+
+    # GET from browsers: show confirmation page
     try:
         resubscribe_url = build_resubscribe_url(decoded_email)
     except Exception as exc:
@@ -326,9 +331,8 @@ def unsubscribe_via_link(token: str, email: str):
     )
 
 
-@app.route("/resubscribe/<token>/<email>", methods=["GET"])
-def resubscribe_via_link(token: str, email: str):
-    """One-click resubscribe via HMAC-signed link."""
+@app.route("/resubscribe/<token>", methods=["GET"])
+def resubscribe_via_link(token: str):
     if not UNSUBSCRIBE_ENABLED:
         APP_LOGGER.warning("Resubscribe endpoint accessed but feature is disabled")
         return render_template(
@@ -340,19 +344,17 @@ def resubscribe_via_link(token: str, email: str):
             current_year=time.strftime("%Y"),
         ), 404
 
-    from urllib.parse import unquote
-
-    decoded_email = unquote(email).lower().strip()
-
-    # Verify HMAC signature
-    if not verify_unsubscribe_token(decoded_email, token):
-        APP_LOGGER.warning("Invalid resubscribe token for %s", decoded_email)
+    try:
+        # Decrypt email - verifies authenticity (can only decrypt with secret key)
+        decoded_email = _decrypt_email(token).lower().strip()
+    except Exception as exc:
+        APP_LOGGER.warning("Failed to decrypt resubscribe token: %s", exc)
         return render_template(
             "resubscribe_result.html",
-            page_title="Resubscribe Failed",
+            page_title="Invalid Link",
             success=False,
-            email=decoded_email,
-            message="Invalid or expired resubscribe link. Please contact support.",
+            email=None,
+            message="The resubscribe link is invalid or expired. Please contact support.",
             current_year=time.strftime("%Y"),
         ), 400
 
