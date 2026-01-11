@@ -40,7 +40,7 @@ from forgotten_movies import (
 )
 from filelock import Timeout
 
-from job_runner import acquire_job_lock, execute_job
+from job_runner import acquire_job_lock, execute_job, get_last_job_status
 
 APP_LOGGER = logging.getLogger("ForgottenMoviesWeb")
 APP_LOGGER.setLevel(logging.INFO)
@@ -133,6 +133,12 @@ def index():
     unsubscribe_records = _format_unsubscribe_records(list_unsubscribed_emails())
     unsubscribe_messages: list[tuple[str, str]] = []
     messages = []
+
+    # Check for job errors and display them
+    last_job = get_last_job_status()
+    if last_job and not last_job.get("success") and last_job.get("error_message"):
+        messages.append(("error", f"Last job failed: {last_job['error_message']}"))
+
     for category, text in get_flashed_messages(with_categories=True):
         if category.startswith("unsubscribe-"):
             unsubscribe_messages.append((category, text))
@@ -192,16 +198,22 @@ def send_request_now(request_id):
     now = datetime.now()
     user_record = get_email_user(email_value)
     APP_LOGGER.info("Manual action: send-now requested for %s (request %s)", email_value, identifier)
-    outcome = _attempt_send_request(
-        record,
-        {},
-        user_record=user_record,
-        respect_cycle=False,
-        respect_cooldown=False,
-        perform_db_updates=not DEBUG_MODE,
-        allow_sleep=False,
-        now_dt=now,
-    )
+
+    try:
+        outcome = _attempt_send_request(
+            record,
+            {},
+            user_record=user_record,
+            respect_cycle=False,
+            respect_cooldown=False,
+            perform_db_updates=not DEBUG_MODE,
+            allow_sleep=False,
+            now_dt=now,
+        )
+    except Exception as exc:
+        APP_LOGGER.exception("Failed to send email for request %s: %s", identifier, exc)
+        flash(f"Failed to send email: {str(exc)}", "todo-error")
+        return redirect(url_for("index", _anchor="todo-card"))
 
     if not outcome.sent:
         APP_LOGGER.info("Send-now skipped for request %s: %s", identifier, outcome.message)

@@ -5,6 +5,7 @@ import ssl
 import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate, make_msgid
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from threading import RLock
@@ -34,6 +35,7 @@ FROM_EMAIL_ADDRESS = os.getenv("FROM_EMAIL_ADDRESS")
 FROM_NAME = os.getenv("FROM_NAME")
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+DISABLE_SMTP_AUTH = os.getenv("DISABLE_SMTP_AUTH", "false").lower() == "true"
 BCC_EMAIL_ADDRESS = os.getenv("BCC_EMAIL_ADDRESS")
 OVERSEERR_NUM_OF_HISTORY_RECORDS = int(os.getenv("OVERSEERR_NUM_OF_HISTORY_RECORDS", 10))  # Default 10
 ADMIN_NAME = os.getenv("ADMIN_NAME")
@@ -1008,6 +1010,14 @@ def send_email(to_address, subject, body, is_html=False, unsubscribe_url=None):
         msg['To'] = actual_recipient
         msg['Bcc'] = BCC_EMAIL_ADDRESS
 
+    if 'Date' not in msg:
+        msg['Date'] = formatdate(localtime=True)
+
+    if 'Message-ID' not in msg:
+        # Use your domain so it looks clean and consistent
+        # (make_msgid will include angle brackets)
+        msg['Message-ID'] = make_msgid(domain=(from_address.split("@")[-1] if "@" in from_address else None))
+
     # Add RFC 8058 List-Unsubscribe headers (HTTPS only - required for one-click)
     if unsubscribe_url and BASE_URL and BASE_URL.lower().startswith('https://'):
         msg['List-Unsubscribe'] = f'<{unsubscribe_url}>'
@@ -1040,12 +1050,15 @@ def send_email(to_address, subject, body, is_html=False, unsubscribe_url=None):
             else:
                 if DEBUG_MODE:
                     logger.debug("SMTP encryption disabled per configuration; logging in without TLS.")
-            if auth_user and EMAIL_PASSWORD:
+            if auth_user and EMAIL_PASSWORD and not DISABLE_SMTP_AUTH:
                 server.login(auth_user, EMAIL_PASSWORD)
                 if DEBUG_MODE:
                     logger.debug("SMTP login succeeded; sending message to %s.", actual_recipient)
             elif DEBUG_MODE:
-                logger.debug("SMTP credentials missing; sending without AUTH to %s.", actual_recipient)
+                if DISABLE_SMTP_AUTH:
+                    logger.debug("SMTP authentication disabled; sending without AUTH to %s.", actual_recipient)
+                else:
+                    logger.debug("SMTP credentials missing; sending without AUTH to %s.", actual_recipient)
             server.send_message(msg)
             if DEBUG_MODE:
                 try:
