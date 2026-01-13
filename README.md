@@ -225,6 +225,30 @@ When enabled, reminder emails include an unsubscribe link that lets users manage
 
 When disabled (default), emails send without unsubscribe links and the endpoints return 404.
 
+## Email Headers & Deliverability
+
+When enabled, reminder emails include RFC 8058 compliant headers for one-click unsubscribe:
+
+```
+List-Unsubscribe: <https://forgotten.example.com/unsubscribe/token>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+```
+
+These headers allow Gmail, Apple Mail, and other clients/providers to display a native "Unsubscribe" button in their UI. The headers are only added when `BASE_URL` uses HTTPS (required by RFC 8058).
+
+**For optimal inbox placement**, ensure your sending domain has proper email authentication, verfication, and policies:
+
+- **SPF** - Authorizes your mail server to send on behalf of your domain
+- **DKIM** - Cryptographically signs emails to verify authenticity
+- **DMARC** - Policy telling receivers how to handle SPF/DKIM failures
+
+> **Note:** Even with proper configuration, email providers may not display the one-click unsubscribe button based on sender reputation, spam scores, or other filtering criteria. The in-email unsubscribe link will always work regardless.
+
+**References:**
+- [RFC 8058 - One-Click Unsubscribe](https://datatracker.ietf.org/doc/html/rfc8058)
+- [Google Email Sender Guidelines](https://support.google.com/mail/answer/81126)
+- [Apple iCloud Mail Postmaster Information](https://support.apple.com/en-us/102322)
+
 ## Reverse Proxy Configuration
 
 The unsubscribe/resubscribe endpoints (`/unsubscribe/<token>` and `/resubscribe/<token>`) should be publicly accessible, but you probably want to hide the admin dashboard from the internet.
@@ -234,11 +258,13 @@ The unsubscribe/resubscribe endpoints (`/unsubscribe/<token>` and `/resubscribe/
 server {
     listen 443 ssl;
     server_name forgotten.*;
+    include /config/nginx/ssl.conf;
 
     # Public endpoints - no auth required
     location ~ ^/(unsubscribe|resubscribe)/[^/]+$ {
         include /config/nginx/proxy.conf;
-        proxy_pass http://container-ip:8741;
+        include /config/nginx/resolver.conf;
+        proxy_pass http://forgotten-movies:8741;
     }
 
     # Everything else returns 404 (hides admin interface)
@@ -275,7 +301,7 @@ server {
 
         include /config/nginx/proxy.conf;
         include /config/nginx/resolver.conf;
-        proxy_pass http://192.198.2.1:8741;
+        proxy_pass http://forgotten-movies:8741;
     }
 
     # Everything else returns 404 (hides admin interface)
@@ -307,7 +333,7 @@ server {
 
         include /config/nginx/proxy.conf;
         include /config/nginx/resolver.conf;
-        proxy_pass http://192.198.2.1:8741;
+        proxy_pass http://forgotten-movies:8741;
     }
 
     # Admin interface (authenticated, NO rate limiting)
@@ -315,7 +341,7 @@ server {
         # Require authentication for admin pages
         include /config/nginx/proxy.conf;
         include /config/nginx/resolver.conf;
-        proxy_pass http://192.198.2.1:8741;
+        proxy_pass http://forgotten-movies:8741;
 
         # Add your favorite auth provider or use basic auth
         auth_basic "Forgotten Movies Admin";
